@@ -11,19 +11,21 @@ export const BRAND = {
   // logo (an absolute URL, or import a file from /src and use it here).
   logoUrl: '',
 
-  supportEmail: 'hello@bemyseo.com',
+  supportEmail: 'connect@bemyseo.com',
   poweredByLine: 'Powered by BeMySEO',
 
-  // Your brand palette. Change these to match BeMySEO exactly.
+  // BeMySEO brand palette (sampled from bemyseo.com). See DESIGN.md.
   colors: {
-    brand:   '#15324B',   // primary — headers, primary buttons
-    brandDk: '#0E2435',   // darker brand shade (hovers)
-    accent:  '#17B0A0',   // highlights, progress bar, focus rings
-    ink:     '#16202A',   // body text
-    slate:   '#5A6672',   // muted text
-    line:    '#E2E8EC',   // borders
-    paper:   '#F4F7F8',   // app background
-    ok:      '#1F9D6B',   // approved
-    warn:    '#E0902A'    // changes requested
+    brand:   '#1362FC',   // vivid BeMySEO blue — primary buttons, links, actions
+    brandDk: '#0B4FD6',   // darker blue (hovers / active)
+    accent:  '#1362FC',   // progress bars, focus rings, markers
+    nav:     '#141B2E',   // deep navy — top bars / app chrome
+    navDk:   '#0E1422',   // darker navy (chrome gradients)
+    ink:     '#161A22',   // body text
+    slate:   '#5C6470',   // muted text
+    line:    '#E1E7F0',   // borders (cool)
+    paper:   '#F6F8FC',   // app background (cool off-white)
+    ok:      '#0C9648',   // approved (BeMySEO green)
+    warn:    '#B5701A'    // changes requested (amber)
   }
 }

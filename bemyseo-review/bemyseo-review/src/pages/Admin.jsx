@@ -10,6 +10,26 @@ function toast(msg) {
   t.textContent = msg; t.classList.add('show')
   clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2000)
 }
+// Group reviews by client entity (client_id), preserving the incoming
+// (newest-first) order so the most recently active clients surface first.
+function groupByClient(reviews, clients) {
+  const nameById = new Map((clients || []).map((c) => [c.id, c.name]))
+  const groups = []
+  const idx = new Map()
+  reviews.forEach((r) => {
+    const key = r.client_id || 'none'
+    if (!idx.has(key)) {
+      idx.set(key, groups.length)
+      groups.push({
+        id: r.client_id || null,
+        client: r.client_id ? (nameById.get(r.client_id) || r.client_name || 'Client') : 'Unassigned',
+        items: [],
+      })
+    }
+    groups[idx.get(key)].items.push(r)
+  })
+  return groups
+}
 
 export default function Admin() {
   const [session, setSession] = useState(undefined) // undefined = still loading
@@ -58,11 +78,16 @@ function Login() {
 
 function Dashboard({ session }) {
   const [reviews, setReviews] = useState(null)
+  const [clients, setClients] = useState([])
   const [view, setView] = useState({ name: 'list' })
 
   const load = useCallback(async () => {
-    const { data } = await supabase.from('reviews').select('*').order('created_at', { ascending: false })
-    setReviews(data || [])
+    const [{ data: revs }, { data: cls }] = await Promise.all([
+      supabase.from('reviews').select('*').order('created_at', { ascending: false }),
+      supabase.from('clients').select('id,name').order('name'),
+    ])
+    setReviews(revs || [])
+    setClients(cls || [])
   }, [])
   useEffect(() => { load() }, [load])
 
@@ -80,10 +105,10 @@ function Dashboard({ session }) {
       </header>
       <main className="adm-main">
         {view.name === 'list' && (
-          <ReviewList reviews={reviews} onNew={() => setView({ name: 'new' })} onOpen={(r) => setView({ name: 'feedback', review: r })} reload={load} />
+          <ReviewList reviews={reviews} clients={clients} onNew={() => setView({ name: 'new' })} onOpen={(r) => setView({ name: 'feedback', review: r })} reload={load} />
         )}
         {view.name === 'new' && (
-          <NewReview onDone={() => { setView({ name: 'list' }); load() }} onCancel={() => setView({ name: 'list' })} />
+          <NewReview clients={clients} onDone={() => { setView({ name: 'list' }); load() }} onCancel={() => setView({ name: 'list' })} />
         )}
         {view.name === 'feedback' && (
           <Feedback review={view.review} back={() => { setView({ name: 'list' }); load() }} />
@@ -93,7 +118,7 @@ function Dashboard({ session }) {
   )
 }
 
-function ReviewList({ reviews, onNew, onOpen, reload }) {
+function ReviewList({ reviews, clients, onNew, onOpen, reload }) {
   const linkFor = (r) => `${window.location.origin}/r/${r.share_token}`
   async function copy(r) { try { await navigator.clipboard.writeText(linkFor(r)); toast('Client link copied') } catch { toast('Copy failed') } }
   async function del(r) {
@@ -101,32 +126,50 @@ function ReviewList({ reviews, onNew, onOpen, reload }) {
     await supabase.from('reviews').delete().eq('id', r.id)
     reload()
   }
+  async function rename(g) {
+    const next = window.prompt(`Rename client “${g.client}” — this updates it on all ${g.items.length} of their reviews.`, g.client)
+    if (next == null) return
+    const t = next.trim()
+    if (!t || t === g.client) return
+    const { error } = await supabase.rpc('rpc_rename_client', { p_client_id: g.id, p_name: t })
+    if (error) { toast(error.message || 'Rename failed') } else { toast('Client renamed'); reload() }
+  }
 
   if (reviews === null) return <div className="center-msg">Loading…</div>
+  const groups = groupByClient(reviews, clients)
   return (
     <>
       <div className="adm-head"><h1>Reviews</h1><button className="btn brand" onClick={onNew}>+ New review</button></div>
       {reviews.length === 0 && <div className="empty-card">No reviews yet. Create one and send the link to your client.</div>}
-      <div className="cards">
-        {reviews.map((r) => (
-          <div className="rcard" key={r.id}>
-            <div className="rcard-main" onClick={() => onOpen(r)}>
-              <b>{r.title} {r.status === 'completed' && <span className="badge approved">Completed</span>}</b>
-              <div className="muted sm">{r.client_name || '—'} · {new Date(r.created_at).toLocaleDateString()}</div>
-            </div>
-            <div className="rcard-act">
-              <button className="btn lite" onClick={() => copy(r)}>Copy client link</button>
-              <button className="btn lite" onClick={() => onOpen(r)}>View feedback</button>
-              <button className="icon-del" title="Delete" onClick={() => del(r)}>✕</button>
-            </div>
+      {groups.map((g) => (
+        <section className="cgroup" key={g.id || 'unassigned'}>
+          <div className="cgroup-h">
+            <h2>{g.client}</h2>
+            <span className="cgroup-count">{g.items.length} review{g.items.length > 1 ? 's' : ''}</span>
+            {g.id && <button className="cgroup-edit" title="Rename client" onClick={() => rename(g)}>Rename</button>}
           </div>
-        ))}
-      </div>
+          <div className="cards">
+            {g.items.map((r) => (
+              <div className="rcard" key={r.id}>
+                <div className="rcard-main" onClick={() => onOpen(r)}>
+                  <b>{r.title} {r.status === 'completed' && <span className="badge approved">Completed</span>}</b>
+                  <div className="muted sm">{new Date(r.created_at).toLocaleDateString()}</div>
+                </div>
+                <div className="rcard-act">
+                  <button className="btn lite" onClick={() => copy(r)}>Copy client link</button>
+                  <button className="btn lite" onClick={() => onOpen(r)}>View feedback</button>
+                  <button className="icon-del" title="Delete" onClick={() => del(r)}>✕</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
     </>
   )
 }
 
-function NewReview({ onDone, onCancel }) {
+function NewReview({ clients = [], onDone, onCancel }) {
   const [title, setTitle] = useState('')
   const [client, setClient] = useState('')
   const [html, setHtml] = useState('')
@@ -167,9 +210,22 @@ function NewReview({ onDone, onCancel }) {
     const valid = sections.filter((s) => s.section_key.trim() && s.name.trim())
     if (valid.length === 0) { setErr('Add at least one section (a key and a name).'); return }
     setBusy(true)
+    // Resolve the client to a real entity: reuse an existing one (case-insensitive)
+    // or create it, so this review joins that client's group.
+    const cname = client.trim()
+    let clientId = null
+    if (cname) {
+      const existing = clients.find((c) => c.name.toLowerCase() === cname.toLowerCase())
+      if (existing) clientId = existing.id
+      else {
+        const { data: nc, error: ce } = await supabase.from('clients').insert({ name: cname }).select('id').single()
+        if (ce) { setErr(ce.message); setBusy(false); return }
+        clientId = nc.id
+      }
+    }
     const { data: rev, error } = await supabase
       .from('reviews')
-      .insert({ title: title.trim(), client_name: client.trim() || null, page_html: html || null })
+      .insert({ title: title.trim(), client_id: clientId, client_name: cname || null, page_html: html || null })
       .select().single()
     if (error) { setErr(error.message); setBusy(false); return }
     const rows = valid.map((s, i) => ({
@@ -189,8 +245,10 @@ function NewReview({ onDone, onCancel }) {
       <div className="grid2">
         <label className="fld"><span>Review title</span>
           <input className="inp" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Dental Tourism Landing Page" /></label>
-        <label className="fld"><span>Client name</span>
-          <input className="inp" value={client} onChange={(e) => setClient(e.target.value)} placeholder="e.g. Let's Smile Dentistry" /></label>
+        <label className="fld"><span>Client name <em className="muted">— pick an existing client to group with their other reviews</em></span>
+          <input className="inp" list="bms-clients" value={client} onChange={(e) => setClient(e.target.value)} placeholder="e.g. Let's Smile Dentistry" />
+          <datalist id="bms-clients">{clients.map((c) => <option key={c.id} value={c.name} />)}</datalist>
+        </label>
       </div>
       <label className="fld"><span>Page HTML <em className="muted">— paste the deliverable, or upload a .html file</em></span>
         <textarea className="inp mono" rows={6} value={html} onChange={(e) => onHtmlChange(e.target.value)} placeholder="<!doctype html> …" /></label>

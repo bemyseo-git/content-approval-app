@@ -30,8 +30,10 @@ export default function ClientReview() {
   const [name, setName] = useState(() => localStorage.getItem('bms_review_name') || '')
   const [needName, setNeedName] = useState(() => !localStorage.getItem('bms_review_name'))
   const [draft, setDraft] = useState('')
+  const [welcomeBack, setWelcomeBack] = useState(false)
   const frameRef = useRef(null)
   const injected = useRef(false)
+  const welcomedRef = useRef(false)
 
   const load = useCallback(async () => {
     const { data: res, error } = await supabase.rpc('rpc_get_review', { p_token: token })
@@ -42,6 +44,20 @@ export default function ClientReview() {
 
   useEffect(() => { load() }, [load])
   useEffect(() => { const t = setInterval(load, 10000); return () => clearInterval(t) }, [load])
+
+  // Greet returning clients who already have progress on this review (once per visit).
+  useEffect(() => {
+    if (welcomedRef.current || !data) return
+    const known = !!localStorage.getItem('bms_review_name')
+    const hasProgress = data.sections.some((s) => s.status !== 'pending') ||
+      data.comments.some((c) => c.author_role === 'client')
+    if (known && hasProgress && data.review.status !== 'completed') {
+      welcomedRef.current = true
+      setWelcomeBack(true)
+      const t = setTimeout(() => setWelcomeBack(false), 7000)
+      return () => clearTimeout(t)
+    }
+  }, [data])
 
   // Inject section markers into the preview once it has loaded (same-origin srcDoc).
   const onFrameLoad = () => {
@@ -202,6 +218,13 @@ export default function ClientReview() {
 
   return (
     <div className="rv-app">
+      {welcomeBack && (
+        <div className="rv-welcome" role="status">
+          <span>👋 Welcome back{name ? `, ${name}` : ''} — picking up right where you left off.</span>
+          <button onClick={() => setWelcomeBack(false)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
+
       {needName && (
         <div className="ov">
           <div className="modal sm">

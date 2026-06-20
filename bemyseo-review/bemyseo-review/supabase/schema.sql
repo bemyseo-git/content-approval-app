@@ -8,10 +8,19 @@ create extension if not exists pgcrypto;
 -- ----------------------------------------------------------------------------
 --  Tables
 -- ----------------------------------------------------------------------------
+create table if not exists public.clients (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null,
+  created_by uuid references auth.users(id) on delete set null default auth.uid(),
+  created_at timestamptz not null default now(),
+  unique (created_by, name)
+);
+
 create table if not exists public.reviews (
   id           uuid primary key default gen_random_uuid(),
   title        text not null,
-  client_name  text,
+  client_id    uuid references public.clients(id) on delete set null,
+  client_name  text,                 -- synced display cache of the client's name
   page_html    text,                 -- the deliverable HTML (or null if using a URL)
   page_url     text,                 -- optional: review a live URL instead
   share_token  text unique not null default encode(gen_random_bytes(16), 'hex'),
@@ -19,6 +28,7 @@ create table if not exists public.reviews (
   created_by   uuid references auth.users(id) on delete set null default auth.uid(),
   created_at   timestamptz not null default now()
 );
+create index if not exists idx_reviews_client on public.reviews(client_id);
 
 create table if not exists public.review_sections (
   id          uuid primary key default gen_random_uuid(),
@@ -50,9 +60,16 @@ create index if not exists idx_comments_review on public.comments(review_id);
 --  Agency (signed in) manages only their own reviews. The public/anon role gets
 --  NO direct table access — clients act only through the RPC functions below.
 -- ----------------------------------------------------------------------------
+alter table public.clients         enable row level security;
 alter table public.reviews         enable row level security;
 alter table public.review_sections enable row level security;
 alter table public.comments        enable row level security;
+
+drop policy if exists "clients_owner_all" on public.clients;
+create policy "clients_owner_all" on public.clients
+  for all to authenticated
+  using (created_by = auth.uid())
+  with check (created_by = auth.uid());
 
 drop policy if exists "reviews_owner_all" on public.reviews;
 create policy "reviews_owner_all" on public.reviews
@@ -136,6 +153,20 @@ begin
     where id = p_comment_id and review_id = v_review_id;
 end; $$;
 
+-- Rename a client everywhere at once (agency only). Updates the clients row and
+-- syncs the denormalized client_name cache on every linked review.
+create or replace function public.rpc_rename_client(p_client_id uuid, p_name text)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_name text := trim(p_name);
+begin
+  if length(coalesce(v_name, '')) = 0 then raise exception 'empty name'; end if;
+  update public.clients set name = v_name
+    where id = p_client_id and created_by = auth.uid();
+  if not found then raise exception 'client not found'; end if;
+  update public.reviews set client_name = v_name
+    where client_id = p_client_id and created_by = auth.uid();
+end; $$;
+
 -- Let the client mark the whole review complete (or reopen it) regardless of
 -- how many sections are still pending.
 create or replace function public.rpc_set_review_status(p_token text, p_status text)
@@ -154,7 +185,9 @@ revoke all on function public.rpc_add_comment(text,text,text,text,text)    from 
 revoke all on function public.rpc_set_status(text,text,text)               from public;
 revoke all on function public.rpc_toggle_resolve(text,uuid)               from public;
 revoke all on function public.rpc_set_review_status(text,text)            from public;
+revoke all on function public.rpc_rename_client(uuid,text)                from public, anon;
 
+grant execute on function public.rpc_rename_client(uuid,text)              to authenticated;
 grant execute on function public.rpc_get_review(text)                      to anon, authenticated;
 grant execute on function public.rpc_add_comment(text,text,text,text,text) to anon, authenticated;
 grant execute on function public.rpc_set_status(text,text,text)            to anon, authenticated;

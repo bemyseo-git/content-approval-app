@@ -103,4 +103,4 @@ Change those values and the whole tool re-skins. No other files need editing.
 
 ---
 
-Built for BeMySEO. Questions: `hello@bemyseo.com`.
+Built for BeMySEO. Questions: `connect@bemyseo.com`.

@@ -4,3 +4,8 @@ dist
 .env.local
 .DS_Store
 *.log
+
+# impeccable design skill (local tooling, not app code)
+.agents/
+.impeccable/
+skills-lock.json

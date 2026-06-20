@@ -11,6 +11,8 @@ export default function App() {
     r.setProperty('--brand', c.brand)
     r.setProperty('--brand-dk', c.brandDk)
     r.setProperty('--accent', c.accent)
+    r.setProperty('--nav', c.nav)
+    r.setProperty('--nav-dk', c.navDk)
     r.setProperty('--ink', c.ink)
     r.setProperty('--slate', c.slate)
     r.setProperty('--line', c.line)
