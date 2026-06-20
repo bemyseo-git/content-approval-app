@@ -9,12 +9,11 @@ A branded, client-friendly **content review & approval** tool. Send a client a l
 
 ---
 
-## 1. Put it in your repo
+## 1. Install
 
-This is a self-contained project. Either drop the whole `bemyseo-review/` folder into your existing repo (you'll set Vercel's *Root Directory* to it in step 4), or make it its own repo. Then:
+This is a self-contained project — the app lives at the repo root. Clone it, then:
 
 ```bash
-cd bemyseo-review
 npm install
 ```
 
@@ -52,7 +51,7 @@ Open the printed URL, go to `/admin`, and sign in with the user you created.
 
 1. Push the repo to GitHub.
 2. In Vercel: **Add New → Project → import your repo.**
-3. If `bemyseo-review` is a **subfolder**, set **Root Directory** to `bemyseo-review`. Framework preset: **Vite** (build `npm run build`, output `dist`).
+3. Leave **Root Directory** at the repo root (`/`). Framework preset: **Vite** (build `npm run build`, output `dist`).
 4. Add the two env vars (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) under **Settings → Environment Variables**.
 5. Deploy. `vercel.json` already routes deep links (like `/r/<token>`) correctly, so client links work on refresh and when opened directly.
 
@@ -103,4 +102,4 @@ Change those values and the whole tool re-skins. No other files need editing.
 
 ---
 
-Built for BeMySEO. Questions: `hello@bemyseo.com`.
+Built for BeMySEO. Questions: `connect@bemyseo.com`.
