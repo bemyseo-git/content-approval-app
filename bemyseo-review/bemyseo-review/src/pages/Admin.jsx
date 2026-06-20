@@ -111,7 +111,7 @@ function ReviewList({ reviews, onNew, onOpen, reload }) {
         {reviews.map((r) => (
           <div className="rcard" key={r.id}>
             <div className="rcard-main" onClick={() => onOpen(r)}>
-              <b>{r.title}</b>
+              <b>{r.title} {r.status === 'completed' && <span className="badge approved">Completed</span>}</b>
               <div className="muted sm">{r.client_name || '—'} · {new Date(r.created_at).toLocaleDateString()}</div>
             </div>
             <div className="rcard-act">

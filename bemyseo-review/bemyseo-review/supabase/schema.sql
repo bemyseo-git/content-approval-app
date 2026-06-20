@@ -136,13 +136,27 @@ begin
     where id = p_comment_id and review_id = v_review_id;
 end; $$;
 
+-- Let the client mark the whole review complete (or reopen it) regardless of
+-- how many sections are still pending.
+create or replace function public.rpc_set_review_status(p_token text, p_status text)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_review_id uuid;
+begin
+  select id into v_review_id from public.reviews where share_token = p_token;
+  if v_review_id is null then raise exception 'invalid token'; end if;
+  if p_status not in ('in_review', 'completed') then raise exception 'bad status'; end if;
+  update public.reviews set status = p_status where id = v_review_id;
+end; $$;
+
 -- Expose ONLY these functions to the public role.
 revoke all on function public.rpc_get_review(text)                         from public;
 revoke all on function public.rpc_add_comment(text,text,text,text,text)    from public;
 revoke all on function public.rpc_set_status(text,text,text)               from public;
 revoke all on function public.rpc_toggle_resolve(text,uuid)               from public;
+revoke all on function public.rpc_set_review_status(text,text)            from public;
 
 grant execute on function public.rpc_get_review(text)                      to anon, authenticated;
 grant execute on function public.rpc_add_comment(text,text,text,text,text) to anon, authenticated;
 grant execute on function public.rpc_set_status(text,text,text)            to anon, authenticated;
 grant execute on function public.rpc_toggle_resolve(text,uuid)            to anon, authenticated;
+grant execute on function public.rpc_set_review_status(text,text)         to anon, authenticated;

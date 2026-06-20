@@ -69,6 +69,14 @@ textarea.inp{resize:vertical}
 .rv-prog .bar{width:150px;height:7px;background:rgba(255,255,255,.18);border-radius:99px;overflow:hidden}
 .rv-prog .bar span{display:block;height:100%;background:var(--accent);transition:width .4s}
 .rv-prog em{font-style:normal;font-size:.8rem;color:#cfe0ea;white-space:nowrap}
+.rv-bar-r{display:flex;align-items:center;gap:16px}
+.rv-complete{border:1px solid transparent;border-radius:10px;padding:8px 15px;font-weight:600;font-size:.86rem;background:#fff;color:var(--brand);white-space:nowrap;cursor:pointer;transition:.15s}
+.rv-complete:hover{background:var(--accent);color:#fff}
+.rv-done{display:flex;align-items:center;gap:10px;white-space:nowrap}
+.rv-done-b{font-weight:700;font-size:.84rem;color:#fff;background:rgba(255,255,255,.16);border-radius:99px;padding:5px 12px}
+.rv-done .lnk{color:#cfe0ea}
+.rv-done .lnk:hover{color:#fff}
+.rv-banner{flex:none;padding:10px 20px;background:var(--okbg);color:var(--brand-dk);font-size:.86rem;border-bottom:1px solid var(--line)}
 
 .rv-main{flex:1;display:flex;min-height:0}
 .rv-preview{flex:1;min-width:0;background:#fff}

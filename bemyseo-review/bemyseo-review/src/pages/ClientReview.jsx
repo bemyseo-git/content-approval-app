@@ -123,6 +123,18 @@ export default function ClientReview() {
     await supabase.rpc('rpc_toggle_resolve', { p_token: token, p_comment_id: id })
     load()
   }
+  async function setReviewStatus(status) {
+    await supabase.rpc('rpc_set_review_status', { p_token: token, p_status: status })
+    load()
+  }
+  function completeReview() {
+    const total = data.sections.length
+    const left = total - data.sections.filter((s) => s.status === 'approved').length
+    const msg = left > 0
+      ? `${left} of ${total} section${left > 1 ? 's are' : ' is'} not approved yet. Complete the review anyway?`
+      : 'Mark this review as complete?'
+    if (window.confirm(msg)) setReviewStatus('completed')
+  }
   function saveName() {
     const n = (document.getElementById('nm').value || '').trim() || 'Reviewer'
     localStorage.setItem('bms_review_name', n)
@@ -135,6 +147,7 @@ export default function ClientReview() {
 
   const { sections, comments } = data
   const approved = sections.filter((s) => s.status === 'approved').length
+  const done = data.review.status === 'completed'
   const sel = selected ? sections.find((s) => s.section_key === selected) : null
   const selComments = selected ? comments.filter((c) => c.section_key === selected) : []
 
@@ -157,11 +170,27 @@ export default function ClientReview() {
           <span className="sep">/</span>
           <span className="ttl">{data.review.title}</span>
         </div>
-        <div className="rv-prog">
-          <div className="bar"><span style={{ width: (approved / sections.length * 100) + '%' }} /></div>
-          <em>{approved} of {sections.length} approved</em>
+        <div className="rv-bar-r">
+          <div className="rv-prog">
+            <div className="bar"><span style={{ width: (approved / sections.length * 100) + '%' }} /></div>
+            <em>{approved} of {sections.length} approved</em>
+          </div>
+          {done ? (
+            <span className="rv-done">
+              <span className="rv-done-b">✓ Completed</span>
+              <button className="lnk" onClick={() => setReviewStatus('in_review')}>Reopen</button>
+            </span>
+          ) : (
+            <button className="rv-complete" onClick={completeReview}>Complete review</button>
+          )}
         </div>
       </header>
+
+      {done && (
+        <div className="rv-banner">
+          This review is marked <b>complete</b>. You can still add comments or change a section — reopen it from the top bar if you’d like to keep editing.
+        </div>
+      )}
 
       <main className="rv-main">
         <section className="rv-preview">
