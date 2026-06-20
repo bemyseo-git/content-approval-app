@@ -171,7 +171,8 @@ function ReviewList({ reviews, clients, onNew, onOpen, reload }) {
 
 function NewReview({ clients = [], onDone, onCancel }) {
   const [title, setTitle] = useState('')
-  const [client, setClient] = useState('')
+  const [clientSel, setClientSel] = useState('')   // '' = none · a client id · '__new__'
+  const [newClient, setNewClient] = useState('')
   const [html, setHtml] = useState('')
   const [sections, setSections] = useState([])
   const [busy, setBusy] = useState(false)
@@ -209,23 +210,29 @@ function NewReview({ clients = [], onDone, onCancel }) {
     if (!title.trim()) { setErr('Add a review title.'); return }
     const valid = sections.filter((s) => s.section_key.trim() && s.name.trim())
     if (valid.length === 0) { setErr('Add at least one section (a key and a name).'); return }
-    setBusy(true)
-    // Resolve the client to a real entity: reuse an existing one (case-insensitive)
-    // or create it, so this review joins that client's group.
-    const cname = client.trim()
+    // Resolve the chosen client to a real entity.
     let clientId = null
-    if (cname) {
-      const existing = clients.find((c) => c.name.toLowerCase() === cname.toLowerCase())
-      if (existing) clientId = existing.id
-      else {
-        const { data: nc, error: ce } = await supabase.from('clients').insert({ name: cname }).select('id').single()
-        if (ce) { setErr(ce.message); setBusy(false); return }
-        clientId = nc.id
-      }
+    let clientName = null
+    if (clientSel === '__new__') {
+      const cname = newClient.trim()
+      if (!cname) { setErr('Enter the new client’s name, or choose “No client”.'); return }
+      const dupe = clients.find((c) => c.name.toLowerCase() === cname.toLowerCase())
+      if (dupe) { setErr(`“${dupe.name}” already exists — pick it from the list instead.`); return }
+      setBusy(true)
+      const { data: nc, error: ce } = await supabase.from('clients').insert({ name: cname }).select('id,name').single()
+      if (ce) { setErr(ce.message); setBusy(false); return }
+      clientId = nc.id; clientName = nc.name
+    } else if (clientSel) {
+      const picked = clients.find((c) => c.id === clientSel)
+      clientId = picked ? picked.id : null
+      clientName = picked ? picked.name : null
+      setBusy(true)
+    } else {
+      setBusy(true)
     }
     const { data: rev, error } = await supabase
       .from('reviews')
-      .insert({ title: title.trim(), client_id: clientId, client_name: cname || null, page_html: html || null })
+      .insert({ title: title.trim(), client_id: clientId, client_name: clientName, page_html: html || null })
       .select().single()
     if (error) { setErr(error.message); setBusy(false); return }
     const rows = valid.map((s, i) => ({
@@ -245,10 +252,22 @@ function NewReview({ clients = [], onDone, onCancel }) {
       <div className="grid2">
         <label className="fld"><span>Review title</span>
           <input className="inp" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Dental Tourism Landing Page" /></label>
-        <label className="fld"><span>Client name <em className="muted">— pick an existing client to group with their other reviews</em></span>
-          <input className="inp" list="bms-clients" value={client} onChange={(e) => setClient(e.target.value)} placeholder="e.g. Let's Smile Dentistry" />
-          <datalist id="bms-clients">{clients.map((c) => <option key={c.id} value={c.name} />)}</datalist>
-        </label>
+        <div className="fld"><span>Client</span>
+          <select className="inp select" value={clientSel} onChange={(e) => setClientSel(e.target.value)}>
+            <option value="">No client</option>
+            {clients.length > 0 && (
+              <optgroup label="Existing clients">
+                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </optgroup>
+            )}
+            <option value="__new__">+ Add a new client…</option>
+          </select>
+          {clientSel === '__new__' && (
+            <input className="inp" style={{ marginTop: 8 }} value={newClient} autoFocus
+              onChange={(e) => setNewClient(e.target.value)} placeholder="New client name, e.g. Let's Smile Dentistry" />
+          )}
+          <span className="fld-hint">Groups this review with the client’s other reviews.</span>
+        </div>
       </div>
       <label className="fld"><span>Page HTML <em className="muted">— paste the deliverable, or upload a .html file</em></span>
         <textarea className="inp mono" rows={6} value={html} onChange={(e) => onHtmlChange(e.target.value)} placeholder="<!doctype html> …" /></label>
