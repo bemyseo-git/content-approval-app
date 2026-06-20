@@ -147,9 +147,58 @@ export default function ClientReview() {
 
   const { sections, comments } = data
   const approved = sections.filter((s) => s.status === 'approved').length
+  const changes = sections.filter((s) => s.status === 'changes').length
   const done = data.review.status === 'completed'
   const sel = selected ? sections.find((s) => s.section_key === selected) : null
   const selComments = selected ? comments.filter((c) => c.section_key === selected) : []
+
+  if (done) {
+    return (
+      <div className="ty-wrap">
+        <div className="ty-card">
+          <div className="ty-brand">
+            {BRAND.logoUrl ? <img src={BRAND.logoUrl} alt={BRAND.name} className="logo-img" /> : <b>{BRAND.name}</b>}
+          </div>
+          <div className="ty-check" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+          </div>
+          <h1>Thank you{data.review.client_name ? `, ${data.review.client_name}` : ''}!</h1>
+          <p className="ty-lead">
+            Your review of <b>{data.review.title}</b> is in — we have everything we need to move forward.
+          </p>
+          <p className="ty-body">
+            Our team is already rolling up our sleeves. We’ll action your approvals, work through every change you’ve
+            requested, and refine the page accordingly — then send the updated version your way for a final look.
+          </p>
+
+          <div className="ty-stats">
+            <div className="ty-stat"><b>{approved}</b><span>Approved</span></div>
+            <div className="ty-stat"><b>{changes}</b><span>Changes requested</span></div>
+            <div className="ty-stat"><b>{comments.length}</b><span>Comment{comments.length === 1 ? '' : 's'}</span></div>
+          </div>
+
+          <div className="ty-steps">
+            <div className="ty-steps-h">What happens next</div>
+            <ol>
+              <li>We go through your feedback in detail.</li>
+              <li>We implement your changes and polish the page.</li>
+              <li>You’ll get the revised version to review again.</li>
+            </ol>
+          </div>
+
+          <p className="ty-contact">
+            Questions in the meantime? Email us at <a href={`mailto:${BRAND.supportEmail}`}>{BRAND.supportEmail}</a>.
+          </p>
+
+          <button className="ty-reopen" onClick={() => setReviewStatus('in_review')}>
+            Need to add something? Reopen the review
+          </button>
+
+          <div className="ty-foot">{BRAND.poweredByLine}</div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="rv-app">
@@ -175,22 +224,9 @@ export default function ClientReview() {
             <div className="bar"><span style={{ width: (approved / sections.length * 100) + '%' }} /></div>
             <em>{approved} of {sections.length} approved</em>
           </div>
-          {done ? (
-            <span className="rv-done">
-              <span className="rv-done-b">✓ Completed</span>
-              <button className="lnk" onClick={() => setReviewStatus('in_review')}>Reopen</button>
-            </span>
-          ) : (
-            <button className="rv-complete" onClick={completeReview}>Complete review</button>
-          )}
+          <button className="rv-complete" onClick={completeReview}>Complete review</button>
         </div>
       </header>
-
-      {done && (
-        <div className="rv-banner">
-          This review is marked <b>complete</b>. You can still add comments or change a section — reopen it from the top bar if you’d like to keep editing.
-        </div>
-      )}
 
       <main className="rv-main">
         <section className="rv-preview">
