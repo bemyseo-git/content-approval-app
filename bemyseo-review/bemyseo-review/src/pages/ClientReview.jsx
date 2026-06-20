@@ -1,0 +1,236 @@
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { useParams } from 'react-router-dom'
+import { supabase } from '../supabase.js'
+import { BRAND } from '../brand.js'
+
+// Injected into the page preview so reveal-animated / accordion content shows,
+// and the page's own sticky chrome doesn't fight the review UI.
+const OVERRIDE =
+  '<style>.reveal{opacity:1!important;transform:none!important}.ans{max-height:none!important}' +
+  'header.site{position:static!important}.mbar{display:none!important}body{padding-bottom:0!important}</style>'
+
+const CHIP_CSS =
+  '.rv-sec{cursor:pointer}.rv-sec:hover{outline:2px dashed rgba(23,176,160,.6);outline-offset:-3px}' +
+  '.rv-chip{position:absolute;top:12px;right:12px;z-index:9999;display:inline-flex;align-items:center;gap:5px;' +
+  'border:1px solid #d7e2dc;background:#fff;border-radius:999px;padding:5px 10px;font:600 12px/1 system-ui,sans-serif;' +
+  'color:#15324B;cursor:pointer;box-shadow:0 5px 16px -7px rgba(0,0,0,.4)}.rv-chip svg{width:13px;height:13px}' +
+  '.rv-chip[data-status=approved]{background:#1F9D6B;border-color:#1F9D6B;color:#fff}' +
+  '.rv-chip[data-status=changes]{background:#E0902A;border-color:#E0902A;color:#fff}' +
+  '.rv-flash{animation:rvf 1.1s ease}@keyframes rvf{30%{box-shadow:inset 0 0 0 3px rgba(23,176,160,.85)}}'
+
+const label = (s) => (s === 'approved' ? 'Approved' : s === 'changes' ? 'Changes requested' : 'Pending')
+const initials = (n) => (n || '?').trim().slice(0, 2).toUpperCase()
+const fmt = (ts) => { try { return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) } catch { return '' } }
+
+export default function ClientReview() {
+  const { token } = useParams()
+  const [data, setData] = useState(null)
+  const [err, setErr] = useState(null)
+  const [selected, setSelected] = useState(null)
+  const [name, setName] = useState(() => localStorage.getItem('bms_review_name') || '')
+  const [needName, setNeedName] = useState(() => !localStorage.getItem('bms_review_name'))
+  const [draft, setDraft] = useState('')
+  const frameRef = useRef(null)
+  const injected = useRef(false)
+
+  const load = useCallback(async () => {
+    const { data: res, error } = await supabase.rpc('rpc_get_review', { p_token: token })
+    if (error) { setErr(error.message || 'error'); return }
+    if (!res) { setErr('not_found'); return }
+    setData(res); setErr(null)
+  }, [token])
+
+  useEffect(() => { load() }, [load])
+  useEffect(() => { const t = setInterval(load, 10000); return () => clearInterval(t) }, [load])
+
+  // Inject section markers into the preview once it has loaded (same-origin srcDoc).
+  const onFrameLoad = () => {
+    if (injected.current) return
+    const f = frameRef.current
+    if (!f || !data) return
+    let doc
+    try { doc = f.contentDocument } catch { doc = null }
+    if (!doc) return
+    try {
+      doc.addEventListener('click', (e) => { const a = e.target.closest && e.target.closest('a'); if (a) e.preventDefault() }, true)
+      doc.addEventListener('submit', (e) => e.preventDefault(), true)
+      const st = doc.createElement('style'); st.textContent = CHIP_CSS; doc.head.appendChild(st)
+      data.sections.forEach((s) => {
+        const el = doc.getElementById(s.section_key)
+        if (!el) return
+        if (doc.defaultView.getComputedStyle(el).position === 'static') el.style.position = 'relative'
+        el.classList.add('rv-sec')
+        const chip = doc.createElement('button')
+        chip.className = 'rv-chip'
+        chip.setAttribute('data-rv', s.section_key)
+        chip.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg><span class="n"></span>'
+        el.appendChild(chip)
+        chip.addEventListener('click', (ev) => { ev.preventDefault(); ev.stopPropagation(); setSelected(s.section_key) })
+        el.addEventListener('click', () => setSelected(s.section_key))
+      })
+      injected.current = true
+      updateChips()
+    } catch { /* preview is best-effort; the sidebar always works */ }
+  }
+
+  const updateChips = useCallback(() => {
+    const f = frameRef.current
+    if (!f || !data) return
+    let doc
+    try { doc = f.contentDocument } catch { return }
+    if (!doc) return
+    data.sections.forEach((s) => {
+      let chip
+      try { chip = doc.querySelector('[data-rv="' + window.CSS.escape(s.section_key) + '"]') } catch { chip = null }
+      if (!chip) return
+      chip.setAttribute('data-status', s.status)
+      const n = data.comments.filter((c) => c.section_key === s.section_key).length
+      const span = chip.querySelector('.n')
+      if (span) { span.textContent = n ? n : ''; span.style.display = n ? 'inline' : 'none' }
+    })
+  }, [data])
+
+  useEffect(() => { updateChips() }, [updateChips])
+
+  // Scroll the preview to the selected section.
+  useEffect(() => {
+    if (!selected) return
+    const f = frameRef.current
+    if (!f) return
+    let doc
+    try { doc = f.contentDocument } catch { return }
+    if (!doc) return
+    const el = doc.getElementById(selected)
+    if (!el) return
+    try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }) } catch { /* noop */ }
+    el.classList.add('rv-flash')
+    setTimeout(() => el.classList && el.classList.remove('rv-flash'), 1100)
+  }, [selected])
+
+  async function addComment() {
+    if (!name) { setNeedName(true); return }
+    const body = draft.trim()
+    if (!body || !selected) return
+    setDraft('')
+    await supabase.rpc('rpc_add_comment', { p_token: token, p_section_key: selected, p_author_name: name, p_author_role: 'client', p_body: body })
+    load()
+  }
+  async function setStatus(key, status) {
+    await supabase.rpc('rpc_set_status', { p_token: token, p_section_key: key, p_status: status })
+    load()
+  }
+  async function toggleResolve(id) {
+    await supabase.rpc('rpc_toggle_resolve', { p_token: token, p_comment_id: id })
+    load()
+  }
+  function saveName() {
+    const n = (document.getElementById('nm').value || '').trim() || 'Reviewer'
+    localStorage.setItem('bms_review_name', n)
+    setName(n); setNeedName(false)
+  }
+
+  if (err === 'not_found') return <div className="center-msg">This review link isn’t valid or has been removed.</div>
+  if (err) return <div className="center-msg">Couldn’t load this review.<br />({err})</div>
+  if (!data) return <div className="center-msg">Loading review…</div>
+
+  const { sections, comments } = data
+  const approved = sections.filter((s) => s.status === 'approved').length
+  const sel = selected ? sections.find((s) => s.section_key === selected) : null
+  const selComments = selected ? comments.filter((c) => c.section_key === selected) : []
+
+  return (
+    <div className="rv-app">
+      {needName && (
+        <div className="ov">
+          <div className="modal sm">
+            <h2>Welcome{data.review.client_name ? `, ${data.review.client_name}` : ''}</h2>
+            <p className="muted">Add your name so your comments are clear to the team.</p>
+            <input id="nm" className="inp" defaultValue={name} placeholder="Your name" onKeyDown={(e) => e.key === 'Enter' && saveName()} />
+            <button className="btn brand full" onClick={saveName}>Start reviewing</button>
+          </div>
+        </div>
+      )}
+
+      <header className="rv-bar">
+        <div className="rv-brand">
+          {BRAND.logoUrl ? <img src={BRAND.logoUrl} alt={BRAND.name} className="logo-img" /> : <b>{BRAND.name}</b>}
+          <span className="sep">/</span>
+          <span className="ttl">{data.review.title}</span>
+        </div>
+        <div className="rv-prog">
+          <div className="bar"><span style={{ width: (approved / sections.length * 100) + '%' }} /></div>
+          <em>{approved} of {sections.length} approved</em>
+        </div>
+      </header>
+
+      <main className="rv-main">
+        <section className="rv-preview">
+          {data.review.page_html
+            ? <iframe ref={frameRef} title="Page preview" srcDoc={OVERRIDE + data.review.page_html} onLoad={onFrameLoad} />
+            : data.review.page_url
+              ? <iframe ref={frameRef} title="Page preview" src={data.review.page_url} />
+              : <div className="center-msg">No page is attached to this review yet.</div>}
+        </section>
+
+        <aside className="rv-side">
+          {!sel ? (
+            <>
+              <div className="side-h">Sections</div>
+              <p className="hint">Click a section here — or right on the page — to approve it or leave a comment.</p>
+              <div className="list">
+                {sections.map((s, i) => {
+                  const n = comments.filter((c) => c.section_key === s.section_key).length
+                  return (
+                    <button key={s.section_key} className="li" onClick={() => setSelected(s.section_key)}>
+                      <div className="li-t">
+                        <span className="num">{String(i + 1).padStart(2, '0')}</span>
+                        <span className="li-n">{s.name}</span>
+                        <span className={'dot ' + s.status} />
+                      </div>
+                      {s.blurb && <div className="li-b">{s.blurb}</div>}
+                      <div className="li-f">
+                        <span className={'badge ' + s.status}>{label(s.status)}</span>
+                        {n > 0 && <span className="cb">{n} comment{n > 1 ? 's' : ''}</span>}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="detail">
+              <button className="back" onClick={() => setSelected(null)}>‹ All sections</button>
+              <h2>{sel.name}</h2>
+              {sel.blurb && <p className="muted">{sel.blurb}</p>}
+              <div className="st-row">
+                <button className={'stbtn ap' + (sel.status === 'approved' ? ' on' : '')} onClick={() => setStatus(sel.section_key, 'approved')}>Approve</button>
+                <button className={'stbtn ch' + (sel.status === 'changes' ? ' on' : '')} onClick={() => setStatus(sel.section_key, 'changes')}>Request changes</button>
+              </div>
+              <div className="thread">
+                {selComments.length === 0 && <div className="empty">No comments yet.</div>}
+                {selComments.map((c) => (
+                  <div className={'cmt' + (c.resolved ? ' done' : '')} key={c.id}>
+                    <div className={'av ' + (c.author_role === 'agency' ? 'ag' : 'cl')}>{initials(c.author_name)}</div>
+                    <div className="cb2">
+                      <div className="cmt-h">
+                        <b>{c.author_name || 'Reviewer'}</b>
+                        <span className={'rt ' + (c.author_role === 'agency' ? 'ag' : 'cl')}>{c.author_role === 'agency' ? BRAND.name : 'Client'}</span>
+                        <span className="tm">{fmt(c.created_at)}</span>
+                      </div>
+                      <div className="cx">{c.body}</div>
+                      <button className="res" onClick={() => toggleResolve(c.id)}>{c.resolved ? 'Reopen' : 'Mark resolved'}</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="composer">
+                <textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add a comment for this section…" rows={3} />
+                <button className="btn brand full" onClick={addComment}>Post comment</button>
+              </div>
+            </div>
+          )}
+        </aside>
+      </main>
+    </div>
+  )
+}
