@@ -96,6 +96,14 @@ export default function ClientReview() {
       doc.addEventListener('click', (e) => { const a = e.target.closest && e.target.closest('a'); if (a) e.preventDefault() }, true)
       doc.addEventListener('submit', (e) => e.preventDefault(), true)
       const st = doc.createElement('style'); st.textContent = CHIP_CSS; doc.head.appendChild(st)
+      // The page's own sticky/fixed chrome (proof banners, nav, etc.) just gets
+      // in the way during review — drop it into normal flow so it scrolls away.
+      try {
+        doc.querySelectorAll('body *').forEach((el) => {
+          const p = doc.defaultView.getComputedStyle(el).position
+          if (p === 'fixed' || p === 'sticky') el.style.position = 'static'
+        })
+      } catch { /* best-effort */ }
       data.sections.forEach((s) => {
         const el = doc.getElementById(s.section_key)
         if (!el) return

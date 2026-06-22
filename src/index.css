@@ -13,6 +13,7 @@
 }
 *{box-sizing:border-box}
 html,body,#root{height:100%}
+html,body{overflow-x:hidden;overscroll-behavior:none}
 body{margin:0;font-family:var(--fb);color:var(--ink);background:var(--paper);-webkit-font-smoothing:antialiased}
 button{font-family:inherit;cursor:pointer}
 a{color:var(--brand)}
@@ -249,9 +250,13 @@ select.select{appearance:none;-webkit-appearance:none;padding-right:36px;cursor:
    ============================================================ */
 .rv-mobilewrap{display:none}
 @media(max-width:820px){
-  .rv-app{height:100%;min-height:0}
+  /* lock the shell so only the preview scrolls — no whole-page left/right pan */
+  .rv-app{position:fixed;inset:0;height:auto;min-height:0;overflow:hidden}
   .rv-main{flex-direction:column}
   .rv-preview{flex:1;min-height:0}
+
+  /* welcome-back toast: pin to the top so it never overlaps the bottom bar */
+  .rv-welcome{top:calc(10px + env(safe-area-inset-top));bottom:auto;max-width:calc(100vw - 24px);font-size:.85rem;padding:10px 12px 10px 16px}
 
   .rv-mobilewrap{display:flex;flex-direction:column;position:fixed;left:0;right:0;bottom:0;z-index:45}
 
