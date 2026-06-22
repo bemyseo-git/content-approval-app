@@ -260,7 +260,7 @@ export default function ClientReview() {
               : <div className="center-msg">No page is attached to this review yet.</div>}
         </section>
 
-        <aside className="rv-side">
+        <aside className={'rv-side' + (sel ? ' open' : '')}>
           {!sel ? (
             <>
               <div className="side-h">Sections</div>

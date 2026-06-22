@@ -244,13 +244,45 @@ select.select{appearance:none;-webkit-appearance:none;padding-right:36px;cursor:
 
 /* ---------- responsive ---------- */
 @media(max-width:820px){
-  .rv-app{height:auto;min-height:100%}
-  .rv-main{flex-direction:column}
-  .rv-preview{height:62vh;border-bottom:1px solid var(--line)}
-  .rv-side{width:100%;border-left:none}
-  .rv-prog .bar{width:90px}
+  /* Review: preview fills the screen, sections list sits in a bottom panel,
+     and an open section becomes a slide-up sheet so comments stay reachable. */
+  .rv-app{height:100%;min-height:0}
+  .rv-main{flex-direction:column;position:relative}
+  .rv-preview{flex:1;min-height:0;border-bottom:1px solid var(--line)}
+  .rv-side{width:100%;border-left:none;flex:none;height:42vh;-webkit-overflow-scrolling:touch}
+  .rv-side.open{
+    position:absolute;left:0;right:0;bottom:0;top:18vh;height:auto;z-index:40;
+    background:#fff;border-top:1px solid var(--line);border-top-left-radius:18px;border-top-right-radius:18px;
+    box-shadow:0 -18px 40px -22px rgba(19,40,80,.55);
+    animation:rv-sheet-up .26s cubic-bezier(.18,.89,.32,1.05)
+  }
+  /* drag-handle affordance on the open sheet */
+  .rv-side.open::before{content:"";position:sticky;top:0;display:block;width:38px;height:4px;border-radius:99px;background:var(--line);margin:8px auto 0}
+  .detail{padding-top:8px}
+  .back{padding:6px 0 12px;font-size:.95rem}
+
   .grid2{grid-template-columns:1fr}
   .sec-row{grid-template-columns:1fr 1fr;grid-auto-rows:auto}
   .sec-row .icon-del{grid-column:2;justify-self:end}
   .adm-main{padding:22px 16px 50px}
+}
+@keyframes rv-sheet-up{from{transform:translateY(18px);opacity:.4}to{transform:translateY(0);opacity:1}}
+
+/* phones: tighten the review header so it fits one row */
+@media(max-width:560px){
+  .rv-bar{height:52px;padding:0 12px;gap:10px}
+  .rv-brand{font-size:.92rem;gap:7px}
+  .rv-brand .ttl{font-size:.84rem}
+  .rv-brand .logo-img{height:20px}
+  .rv-bar-r{gap:10px}
+  .rv-prog .bar{width:64px}
+  .rv-prog em{display:none}                 /* keep the bar, drop the "x of y" text */
+  .rv-complete{padding:7px 11px;font-size:.8rem}
+  .side-h{padding:14px 16px 4px;font-size:1.05rem}
+  .hint{margin:4px 14px 8px}
+  .list{padding:6px 12px 22px}
+  .detail{padding:14px 16px 24px}
+  .ty-card{padding:32px 22px 26px}
+  .ty-stats{gap:8px}
+  .ty-card h1{font-size:1.45rem}
 }
