@@ -7,9 +7,12 @@ export const BRAND = {
   product: 'Review',
   tagline: 'Content review & approval',
 
-  // Leave logoUrl empty to show the "BeMySEO" wordmark, or point it at your
-  // logo (an absolute URL, or import a file from /src and use it here).
-  logoUrl: '',
+  // Logo variants (vendored in /public). logoUrl is the white wordmark used on
+  // the dark app/review headers; logoDarkUrl is the colored wordmark used on
+  // light surfaces (login card, thank-you page). Leave both empty to fall back
+  // to the "BeMySEO" text wordmark.
+  logoUrl: '/logo-white.svg',
+  logoDarkUrl: '/logo-dark.svg',
 
   supportEmail: 'connect@bemyseo.com',
   poweredByLine: 'Powered by BeMySEO',

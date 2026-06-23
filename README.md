@@ -74,7 +74,7 @@ Change those values and the whole tool re-skins. No other files need editing.
 1. **/admin → + New review.** Add a title and client name.
 2. **Paste the deliverable HTML** (or upload the `.html` file). Sections are auto-detected from every `<section id="...">` on the page — edit their display names and add short descriptions.
 3. **Create review → Copy client link → send it.** The client opens it, adds their name, and reviews. No account needed.
-4. **View feedback** any time in the dashboard: per-section statuses, all comments, a progress bar, reply as the agency, mark comments resolved, and **Copy report** for a plain-text summary to drop into Slack, email, or a ticket.
+4. **View feedback** any time in the dashboard: per-section statuses, all comments, a progress bar, reply as the agency, mark comments resolved, **Copy report** for a plain-text summary to drop into Slack, email, or a ticket, and **Download change brief** for a self-contained Markdown file (per-section feedback + the full page HTML) ready to paste into an LLM as edit instructions.
 
 > Tip: any element you want reviewable just needs an `id` (or a `data-review-section="key"` attribute). The section `key` in the dashboard must match that id.
 

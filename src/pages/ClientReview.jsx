@@ -276,7 +276,7 @@ export default function ClientReview() {
       <div className="ty-wrap">
         <div className="ty-card">
           <div className="ty-brand">
-            {BRAND.logoUrl ? <img src={BRAND.logoUrl} alt={BRAND.name} className="logo-img" /> : <b>{BRAND.name}</b>}
+            {BRAND.logoDarkUrl ? <img src={BRAND.logoDarkUrl} alt={BRAND.name} className="logo-img" /> : <b>{BRAND.name}</b>}
           </div>
           <div className="ty-check" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>

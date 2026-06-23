@@ -67,7 +67,7 @@ function Login() {
     <div className="auth-wrap">
       <div className="auth-card">
         <div className="auth-brand">
-          {BRAND.logoUrl ? <img src={BRAND.logoUrl} alt="" className="logo-img" /> : <b>{BRAND.name}</b>}
+          {BRAND.logoDarkUrl ? <img src={BRAND.logoDarkUrl} alt={BRAND.name} className="logo-img" /> : <b>{BRAND.name}</b>}
           <span className="muted">{BRAND.product}</span>
         </div>
         <h1>Agency sign in</h1>
@@ -348,6 +348,64 @@ function Feedback({ review, back }) {
     })
     try { navigator.clipboard.writeText(out.join('\n')); toast('Report copied') } catch { toast('Copy failed') }
   }
+  // Build a self-contained Markdown "change brief": LLM framing + per-section
+  // feedback + the full current page HTML, ready to paste into a model to drive
+  // edits. Mirrors copyReport's author-role formatting.
+  function buildBrief() {
+    const rev = data.review
+    const statusText = rev.status === 'completed' ? 'Completed' : 'In review'
+    const out = [
+      `# Page change brief — ${review.title}`,
+      '',
+      `- **Client:** ${rev.client_name || '—'}`,
+      `- **Review status:** ${statusText}`,
+      `- **Approved:** ${approved}/${sections.length} sections`,
+      `- **Generated:** ${new Date().toLocaleString()}`,
+      '',
+      '## Instructions',
+      '',
+      'You are updating the HTML page included at the end of this document. Apply the',
+      "client's requested changes section by section. Each section below maps to a",
+      '`<section id="…">` in the page HTML via its id. Implement every "changes requested"',
+      'item; leave approved sections unchanged unless a requested change depends on them.',
+      'Preserve the existing structure, styling, and ids unless a change requires otherwise.',
+      '',
+      '## Feedback by section',
+      '',
+    ]
+    sections.forEach((s, i) => {
+      out.push(`### ${i + 1}. ${s.name} (id: \`${s.section_key}\`) — ${label(s.status).toUpperCase()}`)
+      if (s.blurb) out.push(`_${s.blurb}_`)
+      const cs = comments.filter((c) => c.section_key === s.section_key)
+      if (cs.length === 0) out.push('_No comments._')
+      else cs.forEach((c) =>
+        out.push(`- [${c.author_role === 'agency' ? BRAND.name : 'Client'} ${c.author_name || ''}${c.resolved ? ' · resolved' : ''}] ${c.body}`))
+      out.push('')
+    })
+    out.push('## Current page HTML', '')
+    if (rev.page_html) {
+      // A literal ``` inside page_html could in theory break this fence; acceptable
+      // for an internal tool where the agency controls the deliverable.
+      out.push('```html', rev.page_html, '```')
+    } else if (rev.page_url) {
+      out.push(`Page URL: ${rev.page_url}`)
+    } else {
+      out.push('_No page is attached to this review._')
+    }
+    return out.join('\n')
+  }
+  function downloadBrief() {
+    try {
+      const slug = (review.title || 'review').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'review'
+      const blob = new Blob([buildBrief()], { type: 'text/markdown' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = `change-brief-${slug}.md`
+      document.body.appendChild(a); a.click(); a.remove()
+      URL.revokeObjectURL(url)
+      toast('Change brief downloaded')
+    } catch { toast('Download failed') }
+  }
 
   return (
     <div className="fb">
@@ -362,6 +420,7 @@ function Feedback({ review, back }) {
             <button className="btn lite" onClick={() => copyLink('es')} title="Copy Spanish client link">ES</button>
           </span>
           <button className="btn lite" onClick={copyReport}>Copy report</button>
+          <button className={'btn ' + (review.status === 'completed' ? 'brand' : 'lite')} onClick={downloadBrief}>Download change brief</button>
         </div>
       </div>
       <div className="fb-sections">
