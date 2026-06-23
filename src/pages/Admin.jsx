@@ -2,6 +2,11 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../supabase.js'
 import { BRAND } from '../brand.js'
 
+// Build the client-facing link in the chosen language. English is the bare
+// link; Spanish carries ?lang=es, which the review page reads to localize.
+const clientLink = (token, lang) =>
+  `${window.location.origin}/r/${token}${lang === 'es' ? '?lang=es' : ''}`
+
 const label = (s) => (s === 'approved' ? 'Approved' : s === 'changes' ? 'Changes requested' : 'Pending')
 const guessName = (key) => key.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim()
 function toast(msg) {
@@ -119,8 +124,12 @@ function Dashboard({ session }) {
 }
 
 function ReviewList({ reviews, clients, onNew, onOpen, reload }) {
-  const linkFor = (r) => `${window.location.origin}/r/${r.share_token}`
-  async function copy(r) { try { await navigator.clipboard.writeText(linkFor(r)); toast('Client link copied') } catch { toast('Copy failed') } }
+  async function copy(r, lang) {
+    try {
+      await navigator.clipboard.writeText(clientLink(r.share_token, lang))
+      toast(lang === 'es' ? 'Spanish client link copied' : 'English client link copied')
+    } catch { toast('Copy failed') }
+  }
   async function del(r) {
     if (!confirm('Delete this review and all of its feedback? This cannot be undone.')) return
     await supabase.from('reviews').delete().eq('id', r.id)
@@ -156,7 +165,11 @@ function ReviewList({ reviews, clients, onNew, onOpen, reload }) {
                   <div className="muted sm">{new Date(r.created_at).toLocaleDateString()}</div>
                 </div>
                 <div className="rcard-act">
-                  <button className="btn lite" onClick={() => copy(r)}>Copy client link</button>
+                  <span className="copy-split">
+                    <span className="copy-split-label">Copy link</span>
+                    <button className="btn lite" onClick={() => copy(r, 'en')} title="Copy English client link">EN</button>
+                    <button className="btn lite" onClick={() => copy(r, 'es')} title="Copy Spanish client link">ES</button>
+                  </span>
                   <button className="btn lite" onClick={() => onOpen(r)}>View feedback</button>
                   <button className="icon-del" title="Delete" onClick={() => del(r)}>✕</button>
                 </div>
@@ -320,7 +333,12 @@ function Feedback({ review, back }) {
   }
   async function setStatus(key, st) { await supabase.rpc('rpc_set_status', { p_token: token, p_section_key: key, p_status: st }); load() }
   async function toggle(id) { await supabase.rpc('rpc_toggle_resolve', { p_token: token, p_comment_id: id }); load() }
-  function copyLink() { try { navigator.clipboard.writeText(`${window.location.origin}/r/${token}`); toast('Client link copied') } catch { toast('Copy failed') } }
+  function copyLink(lang) {
+    try {
+      navigator.clipboard.writeText(clientLink(token, lang))
+      toast(lang === 'es' ? 'Spanish client link copied' : 'English client link copied')
+    } catch { toast('Copy failed') }
+  }
   function copyReport() {
     const out = [review.title, `${approved}/${sections.length} sections approved`, '']
     sections.forEach((s, i) => {
@@ -338,7 +356,11 @@ function Feedback({ review, back }) {
         <div><h1>{review.title}</h1><div className="muted">{review.client_name || '—'}</div></div>
         <div className="fb-actions">
           <span className="prog2"><span className="bar"><span style={{ width: (approved / sections.length * 100) + '%' }} /></span>{approved}/{sections.length} approved</span>
-          <button className="btn lite" onClick={copyLink}>Copy client link</button>
+          <span className="copy-split">
+            <span className="copy-split-label">Copy link</span>
+            <button className="btn lite" onClick={() => copyLink('en')} title="Copy English client link">EN</button>
+            <button className="btn lite" onClick={() => copyLink('es')} title="Copy Spanish client link">ES</button>
+          </span>
           <button className="btn lite" onClick={copyReport}>Copy report</button>
         </div>
       </div>

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabase.js'
 import { BRAND } from '../brand.js'
+import { makeT, normalizeLang, statusLabel } from '../i18n.jsx'
 
 // Injected into the page preview so reveal-animated / accordion content shows,
 // and the page's own sticky chrome doesn't fight the review UI.
@@ -23,12 +24,15 @@ const CHIP_CSS =
   'body.rv-spot .rv-sec{opacity:.32}body.rv-spot .rv-sec.rv-active{opacity:1}' +
   '.rv-sec.rv-active{box-shadow:inset 0 0 0 2px rgba(19,98,252,.55)}'
 
-const label = (s) => (s === 'approved' ? 'Approved' : s === 'changes' ? 'Changes requested' : 'Pending')
 const initials = (n) => (n || '?').trim().slice(0, 2).toUpperCase()
 const fmt = (ts) => { try { return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) } catch { return '' } }
 
 export default function ClientReview() {
   const { token } = useParams()
+  const [searchParams] = useSearchParams()
+  const lang = normalizeLang(searchParams.get('lang'))
+  const t = makeT(lang)
+  const label = (s) => statusLabel(t, s)
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
   const [selected, setSelected] = useState(null)   // desktop sidebar detail
@@ -54,7 +58,8 @@ export default function ClientReview() {
   }, [token])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { const t = setInterval(load, 10000); return () => clearInterval(t) }, [load])
+  useEffect(() => { const id = setInterval(load, 10000); return () => clearInterval(id) }, [load])
+  useEffect(() => { document.documentElement.lang = lang }, [lang])
 
   // Track viewport so we can switch between the desktop two-pane and the
   // mobile section-stepper experiences.
@@ -79,8 +84,8 @@ export default function ClientReview() {
     if (known && hasProgress && data.review.status !== 'completed') {
       welcomedRef.current = true
       setWelcomeBack(true)
-      const t = setTimeout(() => setWelcomeBack(false), 7000)
-      return () => clearTimeout(t)
+      const id = setTimeout(() => setWelcomeBack(false), 7000)
+      return () => clearTimeout(id)
     }
   }, [data])
 
@@ -222,13 +227,11 @@ export default function ClientReview() {
   function completeReview() {
     const total = data.sections.length
     const left = total - data.sections.filter((s) => s.status === 'approved').length
-    const msg = left > 0
-      ? `${left} of ${total} section${left > 1 ? 's are' : ' is'} not approved yet. Complete the review anyway?`
-      : 'Mark this review as complete?'
+    const msg = left > 0 ? t('confirmIncomplete', left, total) : t('confirmComplete')
     if (window.confirm(msg)) setReviewStatus('completed')
   }
   function saveName() {
-    const n = (document.getElementById('nm').value || '').trim() || 'Reviewer'
+    const n = (document.getElementById('nm').value || '').trim() || t('reviewer')
     localStorage.setItem('bms_review_name', n)
     setName(n); setNeedName(false)
   }
@@ -249,9 +252,9 @@ export default function ClientReview() {
     if (el) try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }) } catch { /* noop */ }
   }
 
-  if (err === 'not_found') return <div className="center-msg">This review link isn’t valid or has been removed.</div>
-  if (err) return <div className="center-msg">Couldn’t load this review.<br />({err})</div>
-  if (!data) return <div className="center-msg">Loading review…</div>
+  if (err === 'not_found') return <div className="center-msg">{t('invalid')}</div>
+  if (err) return <div className="center-msg">{t('loadError')}<br />({err})</div>
+  if (!data) return <div className="center-msg">{t('loading')}</div>
 
   const { sections, comments } = data
   const approved = sections.filter((s) => s.status === 'approved').length
@@ -278,36 +281,29 @@ export default function ClientReview() {
           <div className="ty-check" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
           </div>
-          <h1>Thank you{data.review.client_name ? `, ${data.review.client_name}` : ''}!</h1>
-          <p className="ty-lead">
-            Your review of <b>{data.review.title}</b> is in — we have everything we need to move forward.
-          </p>
-          <p className="ty-body">
-            Our team is already rolling up our sleeves. We’ll action your approvals, work through every change you’ve
-            requested, and refine the page accordingly — then send the updated version your way for a final look.
-          </p>
+          <h1>{t('tyTitle', data.review.client_name)}</h1>
+          <p className="ty-lead">{t('tyLead', data.review.title)}</p>
+          <p className="ty-body">{t('tyBody')}</p>
 
           <div className="ty-stats">
-            <div className="ty-stat"><b>{approved}</b><span>Approved</span></div>
-            <div className="ty-stat"><b>{changes}</b><span>Changes requested</span></div>
-            <div className="ty-stat"><b>{comments.length}</b><span>Comment{comments.length === 1 ? '' : 's'}</span></div>
+            <div className="ty-stat"><b>{approved}</b><span>{t('tyApproved')}</span></div>
+            <div className="ty-stat"><b>{changes}</b><span>{t('tyChanges')}</span></div>
+            <div className="ty-stat"><b>{comments.length}</b><span>{t('tyComments', comments.length)}</span></div>
           </div>
 
           <div className="ty-steps">
-            <div className="ty-steps-h">What happens next</div>
+            <div className="ty-steps-h">{t('tyNextH')}</div>
             <ol>
-              <li>We go through your feedback in detail.</li>
-              <li>We implement your changes and polish the page.</li>
-              <li>You’ll get the revised version to review again.</li>
+              <li>{t('tyStep1')}</li>
+              <li>{t('tyStep2')}</li>
+              <li>{t('tyStep3')}</li>
             </ol>
           </div>
 
-          <p className="ty-contact">
-            Questions in the meantime? Email us at <a href={`mailto:${BRAND.supportEmail}`}>{BRAND.supportEmail}</a>.
-          </p>
+          <p className="ty-contact">{t('tyContact', BRAND.supportEmail)}</p>
 
           <button className="ty-reopen" onClick={() => setReviewStatus('in_review')}>
-            Need to add something? Reopen the review
+            {t('tyReopen')}
           </button>
 
           <div className="ty-foot">{BRAND.poweredByLine}</div>
@@ -320,18 +316,18 @@ export default function ClientReview() {
     <div className="rv-app">
       {welcomeBack && (
         <div className="rv-welcome" role="status">
-          <span>👋 Welcome back{name ? `, ${name}` : ''} — picking up right where you left off.</span>
-          <button onClick={() => setWelcomeBack(false)} aria-label="Dismiss">✕</button>
+          <span>{t('welcomeBack', name)}</span>
+          <button onClick={() => setWelcomeBack(false)} aria-label={t('dismiss')}>✕</button>
         </div>
       )}
 
       {needName && (
         <div className="ov">
           <div className="modal sm">
-            <h2>Welcome{data.review.client_name ? `, ${data.review.client_name}` : ''}</h2>
-            <p className="muted">Add your name so your comments are clear to the team.</p>
-            <input id="nm" className="inp" defaultValue={name} placeholder="Your name" onKeyDown={(e) => e.key === 'Enter' && saveName()} />
-            <button className="btn brand full" onClick={saveName}>Start reviewing</button>
+            <h2>{t('welcome', data.review.client_name)}</h2>
+            <p className="muted">{t('namePrompt')}</p>
+            <input id="nm" className="inp" defaultValue={name} placeholder={t('namePlaceholder')} onKeyDown={(e) => e.key === 'Enter' && saveName()} />
+            <button className="btn brand full" onClick={saveName}>{t('startReviewing')}</button>
           </div>
         </div>
       )}
@@ -345,9 +341,9 @@ export default function ClientReview() {
         <div className="rv-bar-r">
           <div className="rv-prog">
             <div className="bar"><span style={{ width: (approved / sections.length * 100) + '%' }} /></div>
-            <em>{approved} of {sections.length} approved</em>
+            <em>{t('progress', approved, sections.length)}</em>
           </div>
-          <button className="rv-complete" onClick={completeReview}>Complete review</button>
+          <button className="rv-complete" onClick={completeReview}>{t('completeReview')}</button>
         </div>
       </header>
 
@@ -357,15 +353,15 @@ export default function ClientReview() {
             ? <iframe ref={frameRef} title="Page preview" srcDoc={OVERRIDE + data.review.page_html} onLoad={onFrameLoad} />
             : data.review.page_url
               ? <iframe ref={frameRef} title="Page preview" src={data.review.page_url} />
-              : <div className="center-msg">No page is attached to this review yet.</div>}
+              : <div className="center-msg">{t('noPage')}</div>}
         </section>
 
         {!isMobile && (
           <aside className="rv-side">
             {!sel ? (
               <>
-                <div className="side-h">Sections</div>
-                <p className="hint">Click a section here — or right on the page — to approve it or leave a comment.</p>
+                <div className="side-h">{t('sections')}</div>
+                <p className="hint">{t('sectionsHint')}</p>
                 <div className="list">
                   {sections.map((s, i) => {
                     const n = comments.filter((c) => c.section_key === s.section_key).length
@@ -379,7 +375,7 @@ export default function ClientReview() {
                         {s.blurb && <div className="li-b">{s.blurb}</div>}
                         <div className="li-f">
                           <span className={'badge ' + s.status}>{label(s.status)}</span>
-                          {n > 0 && <span className="cb">{n} comment{n > 1 ? 's' : ''}</span>}
+                          {n > 0 && <span className="cb">{t('comments', n)}</span>}
                         </div>
                       </button>
                     )
@@ -388,33 +384,33 @@ export default function ClientReview() {
               </>
             ) : (
               <div className="detail">
-                <button className="back" onClick={() => setSelected(null)}>‹ All sections</button>
+                <button className="back" onClick={() => setSelected(null)}>{t('allSections')}</button>
                 <h2>{sel.name}</h2>
                 {sel.blurb && <p className="muted">{sel.blurb}</p>}
                 <div className="st-row">
-                  <button className={'stbtn ap' + (sel.status === 'approved' ? ' on' : '')} onClick={() => setStatus(sel.section_key, 'approved')}>Approve</button>
-                  <button className={'stbtn ch' + (sel.status === 'changes' ? ' on' : '')} onClick={() => setStatus(sel.section_key, 'changes')}>Request changes</button>
+                  <button className={'stbtn ap' + (sel.status === 'approved' ? ' on' : '')} onClick={() => setStatus(sel.section_key, 'approved')}>{t('approve')}</button>
+                  <button className={'stbtn ch' + (sel.status === 'changes' ? ' on' : '')} onClick={() => setStatus(sel.section_key, 'changes')}>{t('requestChanges')}</button>
                 </div>
                 <div className="thread">
-                  {selComments.length === 0 && <div className="empty">No comments yet.</div>}
+                  {selComments.length === 0 && <div className="empty">{t('noCommentsYet')}</div>}
                   {selComments.map((c) => (
                     <div className={'cmt' + (c.resolved ? ' done' : '')} key={c.id}>
                       <div className={'av ' + (c.author_role === 'agency' ? 'ag' : 'cl')}>{initials(c.author_name)}</div>
                       <div className="cb2">
                         <div className="cmt-h">
-                          <b>{c.author_name || 'Reviewer'}</b>
-                          <span className={'rt ' + (c.author_role === 'agency' ? 'ag' : 'cl')}>{c.author_role === 'agency' ? BRAND.name : 'Client'}</span>
+                          <b>{c.author_name || t('reviewer')}</b>
+                          <span className={'rt ' + (c.author_role === 'agency' ? 'ag' : 'cl')}>{c.author_role === 'agency' ? BRAND.name : t('client')}</span>
                           <span className="tm">{fmt(c.created_at)}</span>
                         </div>
                         <div className="cx">{c.body}</div>
-                        <button className="res" onClick={() => toggleResolve(c.id)}>{c.resolved ? 'Reopen' : 'Mark resolved'}</button>
+                        <button className="res" onClick={() => toggleResolve(c.id)}>{c.resolved ? t('reopen') : t('markResolved')}</button>
                       </div>
                     </div>
                   ))}
                 </div>
                 <div className="composer">
-                  <textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add a comment for this section…" rows={3} />
-                  <button className="btn brand full" onClick={() => addComment(sel.section_key)}>Post comment</button>
+                  <textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={t('addComment')} rows={3} />
+                  <button className="btn brand full" onClick={() => addComment(sel.section_key)}>{t('postComment')}</button>
                 </div>
               </div>
             )}
@@ -428,46 +424,46 @@ export default function ClientReview() {
             <div className="rv-cpanel">
               <div className="rv-cpanel-h">
                 <b>{act.name}</b>
-                <button className="rv-cclose" onClick={() => setCOpen(false)}>Done</button>
+                <button className="rv-cclose" onClick={() => setCOpen(false)}>{t('done')}</button>
               </div>
               <div className="rv-thread">
-                {actComments.length === 0 && <div className="empty">No comments yet — add the first one below.</div>}
+                {actComments.length === 0 && <div className="empty">{t('noCommentsFirst')}</div>}
                 {actComments.map((c) => (
                   <div className={'cmt' + (c.resolved ? ' done' : '')} key={c.id}>
                     <div className={'av ' + (c.author_role === 'agency' ? 'ag' : 'cl')}>{initials(c.author_name)}</div>
                     <div className="cb2">
                       <div className="cmt-h">
-                        <b>{c.author_name || 'Reviewer'}</b>
-                        <span className={'rt ' + (c.author_role === 'agency' ? 'ag' : 'cl')}>{c.author_role === 'agency' ? BRAND.name : 'Client'}</span>
+                        <b>{c.author_name || t('reviewer')}</b>
+                        <span className={'rt ' + (c.author_role === 'agency' ? 'ag' : 'cl')}>{c.author_role === 'agency' ? BRAND.name : t('client')}</span>
                         <span className="tm">{fmt(c.created_at)}</span>
                       </div>
                       <div className="cx">{c.body}</div>
-                      <button className="res" onClick={() => toggleResolve(c.id)}>{c.resolved ? 'Reopen' : 'Mark resolved'}</button>
+                      <button className="res" onClick={() => toggleResolve(c.id)}>{c.resolved ? t('reopen') : t('markResolved')}</button>
                     </div>
                   </div>
                 ))}
               </div>
               <div className="composer">
-                <textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={`Add a comment for “${act.name}”…`} rows={2} />
-                <button className="btn brand full" onClick={() => addComment(active)}>Post comment</button>
+                <textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={t('addCommentFor', act.name)} rows={2} />
+                <button className="btn brand full" onClick={() => addComment(active)}>{t('postComment')}</button>
               </div>
             </div>
           )}
 
           <div className="rv-mbar">
             <div className="rv-mbar-nav">
-              <button className="rv-nav" onClick={() => goSection(-1)} disabled={actIdx <= 0} aria-label="Previous section">‹</button>
+              <button className="rv-nav" onClick={() => goSection(-1)} disabled={actIdx <= 0} aria-label={t('prevSection')}>‹</button>
               <div className="rv-mbar-cur">
                 <span className="rv-mbar-num">{String(actIdx + 1).padStart(2, '0')} / {sections.length}</span>
                 <span className="rv-mbar-name">{act.name}</span>
                 <span className={'badge ' + act.status}>{label(act.status)}</span>
               </div>
-              <button className="rv-nav" onClick={() => goSection(1)} disabled={actIdx >= sections.length - 1} aria-label="Next section">›</button>
+              <button className="rv-nav" onClick={() => goSection(1)} disabled={actIdx >= sections.length - 1} aria-label={t('nextSection')}>›</button>
             </div>
             <div className="rv-mbar-act">
-              <button className={'stbtn ap' + (act.status === 'approved' ? ' on' : '')} onClick={approveAndNext}>Approve</button>
-              <button className={'stbtn ch' + (act.status === 'changes' ? ' on' : '')} onClick={() => { setStatus(active, 'changes'); setCOpen(true) }}>Changes</button>
-              <button className={'rv-cbtn' + (cOpen ? ' on' : '')} onClick={() => setCOpen((o) => !o)} aria-label="Comments">
+              <button className={'stbtn ap' + (act.status === 'approved' ? ' on' : '')} onClick={approveAndNext}>{t('approve')}</button>
+              <button className={'stbtn ch' + (act.status === 'changes' ? ' on' : '')} onClick={() => { setStatus(active, 'changes'); setCOpen(true) }}>{t('changesShort')}</button>
+              <button className={'rv-cbtn' + (cOpen ? ' on' : '')} onClick={() => setCOpen((o) => !o)} aria-label={t('commentsLabel')}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" /></svg>
                 {actComments.length > 0 && <i>{actComments.length}</i>}
               </button>

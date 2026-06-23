@@ -183,6 +183,10 @@ textarea.inp{resize:vertical}
 .rcard-main{cursor:pointer;min-width:0}
 .rcard-main b{font-size:1.02rem}
 .rcard-act{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+/* EN / ES client-link copy group */
+.copy-split{display:inline-flex;align-items:center;gap:6px;padding:3px 8px 3px 10px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.copy-split-label{font-size:.82rem;color:var(--slate);font-weight:600}
+.copy-split .btn.lite{padding:4px 9px;font-size:.82rem;font-weight:700;min-width:34px}
 .icon-del{background:none;border:1px solid var(--line);border-radius:8px;width:34px;height:34px;color:var(--slate);font-size:.9rem}
 .icon-del:hover{border-color:#d9534f;color:#d9534f}
 
