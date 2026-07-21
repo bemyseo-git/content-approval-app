@@ -19,16 +19,32 @@ create table if not exists public.clients (
 create table if not exists public.reviews (
   id           uuid primary key default gen_random_uuid(),
   title        text not null,
+  content_type text not null default 'landing_page',  -- 'blog' | 'landing_page'
   client_id    uuid references public.clients(id) on delete set null,
   client_name  text,                 -- synced display cache of the client's name
   page_html    text,                 -- the deliverable HTML (or null if using a URL)
   page_url     text,                 -- optional: review a live URL instead
   share_token  text unique not null default encode(gen_random_bytes(16), 'hex'),
-  status       text not null default 'in_review',
+  status          text not null default 'in_review',  -- in_review | completed | accepted
+  client_decision text,              -- set on completion: 'approved' | 'revision_requested'
+  accepted_at     timestamptz,       -- set when the agency accepts the final content
+  archived_at     timestamptz,       -- set when the agency archives the review
+  due_date        date,              -- optional "please review by" date shown to the client
   created_by   uuid references auth.users(id) on delete set null default auth.uid(),
   created_at   timestamptz not null default now()
 );
 create index if not exists idx_reviews_client on public.reviews(client_id);
+-- Backfill for databases created before these columns existed.
+alter table public.reviews
+  add column if not exists content_type text not null default 'landing_page';
+alter table public.reviews
+  add column if not exists accepted_at timestamptz;
+alter table public.reviews
+  add column if not exists client_decision text;
+alter table public.reviews
+  add column if not exists archived_at timestamptz;
+alter table public.reviews
+  add column if not exists due_date date;
 
 create table if not exists public.review_sections (
   id          uuid primary key default gen_random_uuid(),
@@ -38,8 +54,12 @@ create table if not exists public.review_sections (
   blurb       text,
   sort_order  int  not null default 0,
   status      text not null default 'pending',   -- pending | approved | changes
+  status_by   text,                 -- who set the status (reviewer/agency name)
+  status_at   timestamptz,          -- when the status was set
   unique (review_id, section_key)
 );
+alter table public.review_sections add column if not exists status_by text;
+alter table public.review_sections add column if not exists status_at timestamptz;
 
 create table if not exists public.comments (
   id          uuid primary key default gen_random_uuid(),
@@ -102,10 +122,13 @@ begin
   select json_build_object(
     'review', json_build_object(
       'id', v.id, 'title', v.title, 'client_name', v.client_name,
-      'page_html', v.page_html, 'page_url', v.page_url, 'status', v.status),
+      'content_type', v.content_type,
+      'page_html', v.page_html, 'page_url', v.page_url, 'status', v.status,
+      'accepted_at', v.accepted_at, 'client_decision', v.client_decision,
+      'due_date', v.due_date),
     'sections', coalesce((
       select json_agg(s order by s.sort_order, s.name) from (
-        select id, section_key, name, blurb, sort_order, status
+        select id, section_key, name, blurb, sort_order, status, status_by, status_at
         from public.review_sections where review_id = v.id) s), '[]'::json),
     'comments', coalesce((
       select json_agg(c order by c.created_at) from (
@@ -118,10 +141,11 @@ end; $$;
 create or replace function public.rpc_add_comment(
   p_token text, p_section_key text, p_author_name text, p_author_role text, p_body text)
 returns json language plpgsql security definer set search_path = public as $$
-declare v_review_id uuid; v_role text; row public.comments;
+declare v_review_id uuid; v_status text; v_role text; row public.comments;
 begin
-  select id into v_review_id from public.reviews where share_token = p_token;
+  select id, status into v_review_id, v_status from public.reviews where share_token = p_token;
   if v_review_id is null then raise exception 'invalid token'; end if;
+  if v_status = 'accepted' then raise exception 'review is finalized'; end if;
   if length(coalesce(p_body, '')) = 0 then raise exception 'empty comment'; end if;
   v_role := case when p_author_role = 'agency' then 'agency' else 'client' end;
   insert into public.comments(review_id, section_key, author_name, author_role, body)
@@ -132,23 +156,46 @@ begin
     'body', row.body, 'resolved', row.resolved, 'created_at', row.created_at);
 end; $$;
 
-create or replace function public.rpc_set_status(p_token text, p_section_key text, p_status text)
+drop function if exists public.rpc_set_status(text, text, text);
+create or replace function public.rpc_set_status(
+  p_token text, p_section_key text, p_status text, p_author_name text default null)
 returns void language plpgsql security definer set search_path = public as $$
-declare v_review_id uuid;
+declare v_review_id uuid; v_status text;
 begin
-  select id into v_review_id from public.reviews where share_token = p_token;
+  select id, status into v_review_id, v_status from public.reviews where share_token = p_token;
   if v_review_id is null then raise exception 'invalid token'; end if;
+  if v_status = 'accepted' then raise exception 'review is finalized'; end if;
   if p_status not in ('pending', 'approved', 'changes') then raise exception 'bad status'; end if;
-  update public.review_sections set status = p_status
+  update public.review_sections set
+      status = p_status,
+      status_by = case when p_status = 'pending' then null
+                       else nullif(trim(coalesce(p_author_name, '')), '') end,
+      status_at = case when p_status = 'pending' then null else now() end
     where review_id = v_review_id and section_key = p_section_key;
+end; $$;
+
+-- Clients may delete their own comments (matched by role + saved name) while
+-- the review is still open.
+create or replace function public.rpc_delete_comment(p_token text, p_comment_id uuid, p_author_name text)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_review_id uuid; v_status text;
+begin
+  select id, status into v_review_id, v_status from public.reviews where share_token = p_token;
+  if v_review_id is null then raise exception 'invalid token'; end if;
+  if v_status = 'accepted' then raise exception 'review is finalized'; end if;
+  delete from public.comments
+    where id = p_comment_id and review_id = v_review_id
+      and author_role = 'client'
+      and coalesce(author_name, '') = coalesce(p_author_name, '');
 end; $$;
 
 create or replace function public.rpc_toggle_resolve(p_token text, p_comment_id uuid)
 returns void language plpgsql security definer set search_path = public as $$
-declare v_review_id uuid;
+declare v_review_id uuid; v_status text;
 begin
-  select id into v_review_id from public.reviews where share_token = p_token;
+  select id, status into v_review_id, v_status from public.reviews where share_token = p_token;
   if v_review_id is null then raise exception 'invalid token'; end if;
+  if v_status = 'accepted' then raise exception 'review is finalized'; end if;
   update public.comments set resolved = not resolved
     where id = p_comment_id and review_id = v_review_id;
 end; $$;
@@ -171,25 +218,46 @@ end; $$;
 -- how many sections are still pending.
 create or replace function public.rpc_set_review_status(p_token text, p_status text)
 returns void language plpgsql security definer set search_path = public as $$
-declare v_review_id uuid;
+declare v_review_id uuid; v_status text;
 begin
-  select id into v_review_id from public.reviews where share_token = p_token;
+  select id, status into v_review_id, v_status from public.reviews where share_token = p_token;
   if v_review_id is null then raise exception 'invalid token'; end if;
+  if v_status = 'accepted' then raise exception 'review is finalized'; end if;
   if p_status not in ('in_review', 'completed') then raise exception 'bad status'; end if;
-  update public.reviews set status = p_status where id = v_review_id;
+  update public.reviews set status = p_status,
+    client_decision = case when p_status = 'in_review' then null else client_decision end
+    where id = v_review_id;
+end; $$;
+
+-- Complete the review with an explicit outcome: the client either approves the
+-- content as-is (comments become production notes) or asks for a new version.
+create or replace function public.rpc_complete_review(p_token text, p_decision text)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_review_id uuid; v_status text;
+begin
+  select id, status into v_review_id, v_status from public.reviews where share_token = p_token;
+  if v_review_id is null then raise exception 'invalid token'; end if;
+  if v_status = 'accepted' then raise exception 'review is finalized'; end if;
+  if p_decision not in ('approved', 'revision_requested') then raise exception 'bad decision'; end if;
+  update public.reviews set status = 'completed', client_decision = p_decision
+    where id = v_review_id;
 end; $$;
 
 -- Expose ONLY these functions to the public role.
 revoke all on function public.rpc_get_review(text)                         from public;
 revoke all on function public.rpc_add_comment(text,text,text,text,text)    from public;
-revoke all on function public.rpc_set_status(text,text,text)               from public;
+revoke all on function public.rpc_set_status(text,text,text,text)               from public;
 revoke all on function public.rpc_toggle_resolve(text,uuid)               from public;
+revoke all on function public.rpc_delete_comment(text,uuid,text)          from public;
 revoke all on function public.rpc_set_review_status(text,text)            from public;
+revoke all on function public.rpc_complete_review(text,text)              from public;
 revoke all on function public.rpc_rename_client(uuid,text)                from public, anon;
 
 grant execute on function public.rpc_rename_client(uuid,text)              to authenticated;
 grant execute on function public.rpc_get_review(text)                      to anon, authenticated;
 grant execute on function public.rpc_add_comment(text,text,text,text,text) to anon, authenticated;
-grant execute on function public.rpc_set_status(text,text,text)            to anon, authenticated;
+grant execute on function public.rpc_set_status(text,text,text,text)            to anon, authenticated;
 grant execute on function public.rpc_toggle_resolve(text,uuid)            to anon, authenticated;
+grant execute on function public.rpc_delete_comment(text,uuid,text)       to anon, authenticated;
 grant execute on function public.rpc_set_review_status(text,text)         to anon, authenticated;
+grant execute on function public.rpc_complete_review(text,text)           to anon, authenticated;
