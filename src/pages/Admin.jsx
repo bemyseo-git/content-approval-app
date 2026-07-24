@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../supabase.js'
 import { BRAND } from '../brand.js'
-import { appConfirm, appPrompt } from '../dialog.jsx'
+import { appConfirm, appPrompt, appSelect } from '../dialog.jsx'
 
 // Build the client-facing review link.
 // English is the bare link; Spanish carries ?lang=es, which the review page
@@ -426,10 +426,16 @@ function Dashboard({ session }) {
   return (
     <div className="adm">
       <header className="adm-bar">
-        <button className="adm-brand" onClick={() => setView({ name: 'list' })} title="Back to dashboard">
-          {BRAND.logoUrl ? <img src={BRAND.logoUrl} className="logo-img" alt="" /> : <b>{BRAND.name}</b>}
-          <span className="sep">/</span><span>{BRAND.product}</span>
-        </button>
+        <div className="adm-l">
+          <button className="adm-brand" onClick={() => setView({ name: 'list' })} title="Back to dashboard">
+            {BRAND.logoUrl ? <img src={BRAND.logoUrl} className="logo-img" alt="" /> : <b>{BRAND.name}</b>}
+            <span className="sep">/</span><span>{BRAND.product}</span>
+          </button>
+          <nav className="adm-nav">
+            <button className={'adm-nav-lnk' + (view.name === 'reviews-table' ? ' on' : '')} onClick={() => setView({ name: 'reviews-table' })}>All reviews (table)</button>
+            <button className={'adm-nav-lnk' + (view.name === 'clients' ? ' on' : '')} onClick={() => setView({ name: 'clients' })}>View clients</button>
+          </nav>
+        </div>
         <div className="adm-r">
           <span className="muted sm adm-email" title={session.user.email}>{session.user.email}</span>
           <button className="lnk" onClick={() => supabase.auth.signOut()}>Sign out</button>
@@ -443,8 +449,6 @@ function Dashboard({ session }) {
             feedback={feedback}
             onNew={() => setView({ name: 'new' })}
             onNewClient={() => setView({ name: 'new-client' })}
-            onClients={() => setView({ name: 'clients' })}
-            onTable={() => setView({ name: 'reviews-table' })}
             onArchived={() => setView({ name: 'archived' })}
             onOpen={(r) => setView({ name: 'feedback', review: r })}
             reload={load}
@@ -496,25 +500,8 @@ function Dashboard({ session }) {
   )
 }
 
-function ReviewList({ reviews, clients, feedback, onNew, onNewClient, onClients, onTable, onArchived, onOpen, reload }) {
-  const [tab, setTab] = useState('active') // active | accepted
+function ReviewList({ reviews, clients, feedback, onNew, onNewClient, onArchived, onOpen, reload }) {
   const [q, setQ] = useState('')
-  async function rename(g) {
-    const next = await appPrompt({
-      title: 'Rename client',
-      body: g.items.length > 1
-        ? `This updates “${g.client}” on all ${g.items.length} of their reviews.`
-        : `This updates “${g.client}” on their review.`,
-      defaultValue: g.client,
-      placeholder: 'Client name',
-      okLabel: 'Rename',
-    })
-    if (next == null) return
-    const t = next.trim()
-    if (!t || t === g.client) return
-    const { error } = await supabase.rpc('rpc_rename_client', { p_client_id: g.id, p_name: t })
-    if (error) { toast(error.message || 'Rename failed') } else { toast('Client renamed'); reload() }
-  }
 
   if (reviews === null) return <div className="center-msg">Loading…</div>
   const nameById = new Map((clients || []).map((c) => [c.id, c.name]))
@@ -524,63 +511,36 @@ function ReviewList({ reviews, clients, feedback, onNew, onNewClient, onClients,
     ((r.client_id ? nameById.get(r.client_id) : r.client_name) || '').toLowerCase().includes(ql)
   const visible = reviews.filter((r) => !r.archived_at)
   const archivedCount = reviews.length - visible.length
-  const activeList = visible.filter((r) => r.status !== 'accepted')
-  const acceptedList = visible.filter((r) => r.status === 'accepted')
-  const readyCount = activeList.filter((r) => r.status === 'completed' && r.client_decision !== 'revision_requested').length
-  const reviseCount = activeList.filter((r) => r.status === 'completed' && r.client_decision === 'revision_requested').length
-  const shown = (tab === 'accepted' ? acceptedList : activeList).filter(matches)
+  const shown = visible.filter(matches)
   const groups = groupByClient(shown, clients)
   return (
     <>
       <div className="adm-head">
         <h1>Reviews</h1>
         <div className="adm-head-act">
-          <button className="btn ghost" onClick={onTable}>All reviews (table)</button>
-          <button className="btn ghost" onClick={onClients}>View clients</button>
-          <span className="adm-head-div" aria-hidden="true" />
+          {visible.length > 0 && (
+            <>
+              <input className="inp search-inp" type="search" value={q} onChange={(e) => setQ(e.target.value)}
+                placeholder="Search title or client…" aria-label="Search reviews" />
+              <span className="adm-head-div" aria-hidden="true" />
+            </>
+          )}
           <button className="btn brand" onClick={onNewClient}>+ New client</button>
           <button className="btn brand" onClick={onNew}>+ New review</button>
         </div>
       </div>
-      {visible.length > 0 && (
-        <div className="filter-tabs">
-          <div className="segmented">
-            <button className={'seg' + (tab === 'active' ? ' on' : '')} onClick={() => setTab('active')}>
-              To review{activeList.length > 0 ? ` · ${activeList.length}` : ''}
-            </button>
-            <button className={'seg' + (tab === 'accepted' ? ' on' : '')} onClick={() => setTab('accepted')}>
-              Accepted{acceptedList.length > 0 ? ` · ${acceptedList.length}` : ''}
-            </button>
-          </div>
-          {tab === 'active' && (readyCount > 0 || reviseCount > 0) && (
-            <span className="ready-hint">
-              {[readyCount > 0 ? `${readyCount} ready to accept` : null,
-                reviseCount > 0 ? `${reviseCount} awaiting new version` : null].filter(Boolean).join(' · ')}
-            </span>
-          )}
-          <input className="inp search-inp" type="search" value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder="Search title or client…" aria-label="Search reviews" />
-        </div>
-      )}
       {reviews.length === 0 ? (
         <div className="empty-card">No reviews yet. Create one and send the link to your client.</div>
       ) : visible.length === 0 ? (
         <div className="empty-card">No active reviews — everything is in the archive.</div>
       ) : shown.length === 0 && (
-        <div className="empty-card">
-          {ql
-            ? <>No reviews match “{q.trim()}”.</>
-            : tab === 'accepted'
-              ? 'Nothing accepted yet. When a client finishes a review, hit Accept to finalize it.'
-              : 'No content waiting on review — everything has been accepted. 🎉'}
-        </div>
+        <div className="empty-card">No reviews match “{q.trim()}”.</div>
       )}
       {groups.map((g) => (
         <section className="cgroup" key={g.id || 'unassigned'}>
           <div className="cgroup-h">
             <h2>{g.client}</h2>
             <span className="cgroup-count">{g.items.length} review{g.items.length > 1 ? 's' : ''}</span>
-            {g.id && <button className="cgroup-edit" title="Rename client" onClick={() => rename(g)}>Rename</button>}
           </div>
           <div className="cards">
             {g.items.map((r) => (
@@ -859,12 +819,29 @@ function ClientsView({ reviews, clients, feedback, onBack, onNewClient, onNew, o
   const activeClients = clients.filter((c) => !c.archived_at)
   const archivedClients = clients.filter((c) => c.archived_at)
 
+  // Single entry point for archiving (instead of a button on every client row):
+  // pick the client from a dialog, then archive.
+  async function archivePick() {
+    const id = await appSelect({
+      title: 'Archive a client',
+      body: 'The client leaves the directory and the new-review picker, but keeps their reviews and can be restored anytime from Archived clients.',
+      options: activeClients.map((c) => ({ value: c.id, label: c.name })),
+      okLabel: 'Archive',
+    })
+    if (id == null) return
+    const c = activeClients.find((x) => x.id === id)
+    if (c) archiveClient(c)
+  }
+
   return (
     <>
       <button className="back" onClick={onBack}>‹ Reviews</button>
       <div className="adm-head">
         <h1>Clients</h1>
         <div className="adm-head-act">
+          {activeClients.length > 0 && (
+            <button className="btn ghost" title="Archive a client — recoverable anytime" onClick={archivePick}>Archive a client</button>
+          )}
           <button className="btn brand" onClick={onNewClient}>+ New client</button>
           <button className="btn brand" onClick={onNew}>+ New review</button>
         </div>
@@ -879,8 +856,7 @@ function ClientsView({ reviews, clients, feedback, onBack, onNewClient, onNew, o
             <div className="cgroup-h">
               <h2>{c.name}</h2>
               <span className="cgroup-count">{items.length} item{items.length === 1 ? '' : 's'}</span>
-              <button className="cgroup-edit" onClick={() => rename(c)}>Rename</button>
-              <button className="cgroup-edit" title="Archive client — recoverable anytime" onClick={() => archiveClient(c)}>Archive</button>
+              <button className="cgroup-edit" title="Edit client name" onClick={() => rename(c)}>Edit name</button>
             </div>
             {items.length === 0 ? (
               <div className="muted sm" style={{ padding: '2px 2px 4px' }}>No content yet.</div>
@@ -1155,71 +1131,94 @@ function Feedback({ review, back }) {
     })
     try { navigator.clipboard.writeText(out.join('\n')); toast('Report copied') } catch { toast('Copy failed') }
   }
-  // Build a self-contained Markdown "change brief": LLM framing + per-section
-  // feedback + the full current page HTML, ready to paste into a model to drive
-  // edits. Mirrors copyReport's author-role formatting.
-  function buildBrief() {
+  const fileSlug = () =>
+    (review.title || 'review').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'review'
+  function saveFile(filename, content, mime) {
+    const blob = new Blob([content], { type: mime })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = filename
+    document.body.appendChild(a); a.click(); a.remove()
+    URL.revokeObjectURL(url)
+  }
+  function downloadHtml() {
+    if (!rev.page_html) { toast(rev.page_url ? 'No HTML attached — this review points to a URL' : 'No page HTML attached') ; return }
+    try {
+      saveFile(`${fileSlug()}.html`, rev.page_html, 'text/html')
+      toast('Page HTML downloaded')
+    } catch { toast('Download failed') }
+  }
+  // Branded, self-contained HTML document that walks through the client's
+  // feedback section by section — readable by anyone, no page source included
+  // (that has its own download).
+  function buildChangesDoc() {
+    const C = BRAND.colors
+    const esc = (t) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
     const statusText = rev.status === 'accepted' ? 'Accepted (final)'
       : rev.status === 'completed'
         ? (rev.client_decision === 'revision_requested' ? 'Completed — client requested a new version'
           : rev.client_decision === 'approved' ? 'Completed — client approved the content' : 'Completed by client')
         : 'In review'
-    const out = [
-      `# Page change brief — ${review.title}`,
-      '',
-      `- **Client:** ${rev.client_name || '—'}`,
-      `- **Review status:** ${statusText}`,
-      `- **Approved:** ${approved}/${sections.length} sections`,
-      `- **Generated:** ${new Date().toLocaleString()}`,
-      '',
-      '## Instructions',
-      '',
-      'You are updating the HTML page included at the end of this document. Apply the',
-      "client's requested changes section by section. Each section below maps to a",
-      '`<section id="…">` in the page HTML via its id. Implement every "changes requested"',
-      'item; leave approved sections unchanged unless a requested change depends on them.',
-      'Preserve the existing structure, styling, and ids unless a change requires otherwise.',
-      '',
-      '## Feedback by section',
-      '',
-    ]
-    if (gComments.length > 0) {
-      out.push('### General feedback (page-level, not tied to one section)')
-      gComments.forEach((c) =>
-        out.push(`- [${c.author_role === 'agency' ? (BRAND.shortName || BRAND.name) : 'Client'} ${c.author_name || ''}${c.resolved ? ' · resolved' : ''}] ${c.body}`))
-      out.push('')
+    const chip = (st) => {
+      const bg = st === 'approved' ? C.ok : st === 'changes' ? C.warn : '#8B97A3'
+      return `<span style="display:inline-block;padding:3px 10px;border-radius:99px;background:${bg};color:#fff;font-size:12px;font-weight:600;letter-spacing:.02em;white-space:nowrap">${esc(label(st))}</span>`
     }
-    sections.forEach((s, i) => {
-      out.push(`### ${i + 1}. ${s.name} (id: \`${s.section_key}\`) — ${label(s.status).toUpperCase()}${s.status !== 'pending' && s.status_by ? ` (by ${s.status_by})` : ''}`)
-      if (s.blurb) out.push(`_${s.blurb}_`)
+    const comment = (c) => {
+      const isAgency = c.author_role === 'agency'
+      const who = isAgency ? `${esc(c.author_name || '')} · ${esc(BRAND.shortName || BRAND.name)}` : `${esc(c.author_name || 'Client')} · Client`
+      const done = c.resolved ? ` <span style="color:${C.ok};font-weight:600">✓ resolved</span>` : ''
+      if (isAgency) return `<div style="margin:8px 0 8px 24px;padding:8px 12px;border-left:3px solid ${C.line};color:${C.slate};font-size:14px">
+        <div style="font-size:12px;margin-bottom:2px">${who}${done}</div>${esc(c.body)}</div>`
+      return `<div style="margin:10px 0;padding:12px 14px;background:${C.paper};border:1px solid ${C.line};border-left:4px solid ${C.brand};border-radius:8px">
+        <div style="font-size:12px;color:${C.slate};margin-bottom:4px;font-weight:600">${who}${done}</div>
+        <div style="font-size:15px;color:${C.ink}">${esc(c.body)}</div></div>`
+    }
+    const sectionBlock = (s, i) => {
       const cs = comments.filter((c) => c.section_key === s.section_key)
-      if (cs.length === 0) out.push('_No comments._')
-      else cs.forEach((c) =>
-        out.push(`- [${c.author_role === 'agency' ? (BRAND.shortName || BRAND.name) : 'Client'} ${c.author_name || ''}${c.resolved ? ' · resolved' : ''}] ${c.body}`))
-      out.push('')
-    })
-    out.push('## Current page HTML', '')
-    if (rev.page_html) {
-      // A literal ``` inside page_html could in theory break this fence; acceptable
-      // for an internal tool where the agency controls the deliverable.
-      out.push('```html', rev.page_html, '```')
-    } else if (rev.page_url) {
-      out.push(`Page URL: ${rev.page_url}`)
-    } else {
-      out.push('_No page is attached to this review._')
+      const by = s.status !== 'pending' && s.status_by ? `<span style="color:${C.slate};font-size:12px"> by ${esc(s.status_by)}</span>` : ''
+      return `<div style="margin:0 0 18px;padding:16px 18px;border:1px solid ${C.line};border-radius:10px;page-break-inside:avoid">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:2px">
+          <span style="color:${C.brandDk};font-weight:700">${i + 1}.</span>
+          <span style="font-weight:700;font-size:17px;color:${C.ink}">${esc(s.name)}</span>
+          ${chip(s.status)}${by}
+        </div>
+        <div style="font-size:12px;color:${C.slate};margin-bottom:6px">Section of the page: <code style="background:${C.paper};padding:1px 6px;border-radius:4px">#${esc(s.section_key)}</code>${s.blurb ? ` — ${esc(s.blurb)}` : ''}</div>
+        ${cs.length === 0
+          ? `<div style="color:${C.slate};font-size:13px;font-style:italic">No comments on this section.</div>`
+          : cs.map(comment).join('')}
+      </div>`
     }
-    return out.join('\n')
+    const general = gComments.length === 0 ? '' : `<div style="margin:0 0 18px;padding:16px 18px;border:1px solid ${C.line};border-radius:10px;page-break-inside:avoid">
+        <div style="font-weight:700;font-size:17px;color:${C.ink};margin-bottom:2px">General feedback</div>
+        <div style="font-size:12px;color:${C.slate};margin-bottom:6px">Applies to the whole page, not one section.</div>
+        ${gComments.map(comment).join('')}
+      </div>`
+    return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Client feedback — ${esc(review.title)}</title></head>
+<body style="margin:0;background:#fff;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${C.ink};line-height:1.5">
+<div style="background:linear-gradient(135deg,${C.nav},${C.navDk});color:#fff;padding:28px 32px">
+  <div style="max-width:760px;margin:0 auto">
+    <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.85">${esc(BRAND.name)} · Client feedback</div>
+    <div style="font-size:24px;font-weight:700;margin-top:4px">${esc(review.title)}</div>
+    <div style="font-size:13px;margin-top:8px;opacity:.9">
+      Client: <b>${esc(rev.client_name || '—')}</b> &nbsp;·&nbsp; Status: <b>${esc(statusText)}</b>
+      &nbsp;·&nbsp; Approved: <b>${approved}/${sections.length} sections</b> &nbsp;·&nbsp; Generated ${esc(new Date().toLocaleDateString())}
+    </div>
+  </div>
+</div>
+<div style="max-width:760px;margin:0 auto;padding:26px 32px 40px">
+  <p style="color:${C.slate};font-size:14px;margin:0 0 20px">Each block below is one section of the page. Highlighted boxes are the client's comments; indented notes are ${esc(BRAND.shortName || BRAND.name)} replies. Sections marked <b style="color:${C.warn}">Changes requested</b> need edits; <b style="color:${C.ok}">Approved</b> sections stay as they are.</p>
+  ${general}
+  ${sections.map(sectionBlock).join('')}
+  <div style="margin-top:28px;padding-top:14px;border-top:1px solid ${C.line};font-size:12px;color:${C.slate}">${esc(BRAND.poweredByLine)} · ${esc(BRAND.supportEmail)}</div>
+</div>
+</body></html>`
   }
-  function downloadBrief() {
+  function downloadChanges() {
     try {
-      const slug = (review.title || 'review').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'review'
-      const blob = new Blob([buildBrief()], { type: 'text/markdown' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url; a.download = `change-brief-${slug}.md`
-      document.body.appendChild(a); a.click(); a.remove()
-      URL.revokeObjectURL(url)
-      toast('Change brief downloaded')
+      saveFile(`client-feedback-${fileSlug()}.html`, buildChangesDoc(), 'text/html')
+      toast('Feedback document downloaded')
     } catch { toast('Download failed') }
   }
 
@@ -1242,7 +1241,8 @@ function Feedback({ review, back }) {
             <button className="btn lite" onClick={() => copyLink('es')} title="Copy Spanish client link">ES</button>
           </span>
           <button className="btn lite" onClick={copyReport}>Copy report</button>
-          <button className="btn lite" onClick={downloadBrief}>Download change brief</button>
+          <button className="btn lite" onClick={downloadHtml} title="Download the page HTML file">Download HTML</button>
+          <button className="btn lite" onClick={downloadChanges} title="Download the client feedback as a branded document">Download changes</button>
           {!locked
             ? <button className="btn brand" onClick={acceptNow} title="Finalize: this content will be used to build the live page">✓ Accept content</button>
             : <button className="btn ghost" onClick={reopenNow}>Reopen review</button>}

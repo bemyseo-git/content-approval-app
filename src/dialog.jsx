@@ -76,6 +76,23 @@ function PromptBox({ title, body, defaultValue, placeholder, okLabel, cancelLabe
   )
 }
 
+function SelectBox({ title, body, options, okLabel, cancelLabel, close }) {
+  const selRef = useRef(null)
+  useEffect(() => { selRef.current && selRef.current.focus() }, [])
+  const submit = () => close(selRef.current ? selRef.current.value : null)
+  return (
+    <DialogShell title={title} body={body} onCancel={() => close(null)}>
+      <select ref={selRef} className="inp" defaultValue={options[0] && options[0].value}>
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <div className="dlg-actions">
+        <button className="btn lite" onClick={() => close(null)}>{cancelLabel}</button>
+        <button className="btn brand" onClick={submit}>{okLabel}</button>
+      </div>
+    </DialogShell>
+  )
+}
+
 // Drop-in for window.confirm: resolves true (confirm) / false (cancel, Esc,
 // or backdrop click). Pass danger:true for destructive actions (red button).
 export function appConfirm({ title, body = '', okLabel = 'OK', cancelLabel = 'Cancel', danger = false }) {
@@ -88,5 +105,12 @@ export function appConfirm({ title, body = '', okLabel = 'OK', cancelLabel = 'Ca
 export function appPrompt({ title, body = '', defaultValue = '', placeholder = '', okLabel = 'Save', cancelLabel = 'Cancel' }) {
   return openDialog((close) => (
     <PromptBox title={title} body={body} defaultValue={defaultValue} placeholder={placeholder} okLabel={okLabel} cancelLabel={cancelLabel} close={close} />
+  ))
+}
+
+// Pick-one dialog: resolves the chosen option's value, or null on cancel.
+export function appSelect({ title, body = '', options = [], okLabel = 'Save', cancelLabel = 'Cancel' }) {
+  return openDialog((close) => (
+    <SelectBox title={title} body={body} options={options} okLabel={okLabel} cancelLabel={cancelLabel} close={close} />
   ))
 }
