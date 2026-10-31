@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabase.js'
+import { useReviewData } from '../useReviewData.js'
 import { BRAND } from '../brand.js'
 import { makeT, normalizeLang, statusLabel } from '../i18n.jsx'
 import { appConfirm } from '../dialog.jsx'
@@ -42,8 +43,7 @@ export default function ClientReview() {
   const lang = normalizeLang(searchParams.get('lang'))
   const t = makeT(lang)
   const label = (s) => statusLabel(t, s)
-  const [data, setData] = useState(null)
-  const [err, setErr] = useState(null)
+  const { data, err, load } = useReviewData(token)
   const [selected, setSelected] = useState(null)   // desktop sidebar detail
   const [active, setActive] = useState(null)        // mobile: section currently in focus
   const [cOpen, setCOpen] = useState(false)         // mobile: comment panel open
@@ -68,15 +68,10 @@ export default function ClientReview() {
   const isMobileRef = useRef(isMobile)
   isMobileRef.current = isMobile
 
-  const load = useCallback(async () => {
-    const { data: res, error } = await supabase.rpc('rpc_get_review', { p_token: token })
-    if (error) { setErr(error.message || 'error'); return }
-    if (!res) { setErr('not_found'); return }
-    setData(res); setErr(null)
-  }, [token])
-
-  useEffect(() => { load() }, [load])
-  useEffect(() => { const id = setInterval(load, 10000); return () => clearInterval(id) }, [load])
+  useEffect(() => {
+    injected.current = false
+    setFrameReady(false)
+  }, [token, data?.review.page_html, data?.review.page_url])
   useEffect(() => { document.documentElement.lang = lang }, [lang])
 
   // Track viewport so we can switch between the desktop two-pane and the
@@ -369,7 +364,7 @@ export default function ClientReview() {
   }
 
   if (err === 'not_found') return <div className="center-msg">{t('invalid')}</div>
-  if (err) return <div className="center-msg">{t('loadError')}<br />({err})</div>
+  if (err && !data) return <div className="center-msg">{t('loadError')}<br />({err})</div>
   if (!data) return <div className="center-msg">{t('loading')}</div>
 
   const { sections, comments } = data
@@ -590,7 +585,7 @@ export default function ClientReview() {
             </div>
           )}
           {data.review.page_html
-            ? <iframe ref={frameRef} title="Page preview" srcDoc={OVERRIDE + data.review.page_html} onLoad={onFrameLoad} />
+            ? <iframe key={token + ':' + (data.page_version || '')} ref={frameRef} title="Page preview" srcDoc={OVERRIDE + data.review.page_html} onLoad={onFrameLoad} />
             : data.review.page_url
               ? <iframe ref={frameRef} title="Page preview" src={data.review.page_url} />
               : <div className="center-msg">{t('noPage')}</div>}

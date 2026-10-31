@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../supabase.js'
+import { useReviewData } from '../useReviewData.js'
+import { startReviewPolling } from '../reviewPolling.js'
 import { BRAND } from '../brand.js'
 import { appConfirm, appPrompt, appSelect } from '../dialog.jsx'
 
@@ -407,7 +409,7 @@ function Dashboard({ session }) {
 
   const load = useCallback(async () => {
     const [{ data: revs }, clsRes, { data: secs }, { data: cmts }] = await Promise.all([
-      supabase.from('reviews').select('*').order('created_at', { ascending: false }),
+      supabase.from('reviews').select('id,title,client_id,client_name,share_token,status,created_at,content_type,due_date,archived_at,accepted_at,client_decision').order('created_at', { ascending: false }),
       supabase.from('clients').select('id,name,archived_at').order('name'),
       supabase.from('review_sections').select('review_id,section_key,name,status'),
       supabase.from('comments').select('review_id,section_key,author_role,resolved'),
@@ -419,9 +421,10 @@ function Dashboard({ session }) {
     setClients(cls || [])
     setFeedback(buildFeedbackMap(secs, cmts))
   }, [])
-  useEffect(() => { load() }, [load])
-  // Poll so client feedback surfaces as notifications without a manual refresh.
-  useEffect(() => { const t = setInterval(load, 20000); return () => clearInterval(t) }, [load])
+  // Poll metadata only while the dashboard is visible and online.
+  useEffect(() => startReviewPolling({
+    refresh: load, canPoll: () => true, delay: () => 30000,
+  }), [load])
 
   return (
     <div className="adm">
@@ -622,7 +625,7 @@ function NewReview({ clients = [], onDone, onCancel }) {
     const { data: rev, error } = await supabase
       .from('reviews')
       .insert({ title: title.trim(), content_type: contentType, client_id: clientId, client_name: clientName, due_date: dueDate || null, page_html: html ? prepareHtml(html).html : null })
-      .select().single()
+      .select('id').single()
     if (error) { setErr(error.message); setBusy(false); return }
     const rows = valid.map((s, i) => ({
       review_id: rev.id, section_key: s.section_key.trim(), name: s.name.trim(),
@@ -1074,15 +1077,11 @@ function FbComment({ c, locked, onToggle }) {
 
 function Feedback({ review, back }) {
   const token = review.share_token
-  const [data, setData] = useState(null)
+  const { data, err, load } = useReviewData(token, false)
   const [drafts, setDrafts] = useState({})
+  const [exporting, setExporting] = useState(false)
 
-  const load = useCallback(async () => {
-    const { data: res } = await supabase.rpc('rpc_get_review', { p_token: token })
-    setData(res)
-  }, [token])
-  useEffect(() => { load(); const t = setInterval(load, 12000); return () => clearInterval(t) }, [load])
-
+  if (err && !data) return <div className="center-msg">Could not load feedback: {err}</div>
   if (!data) return <div className="center-msg">Loading…</div>
   const { sections, comments } = data
   const rev = data.review                       // fresh status (polled), not the list snapshot
@@ -1141,12 +1140,19 @@ function Feedback({ review, back }) {
     document.body.appendChild(a); a.click(); a.remove()
     URL.revokeObjectURL(url)
   }
-  function downloadHtml() {
-    if (!rev.page_html) { toast(rev.page_url ? 'No HTML attached — this review points to a URL' : 'No page HTML attached') ; return }
+  async function downloadHtml() {
+    if (exporting) return
+    setExporting(true)
     try {
-      saveFile(`${fileSlug()}.html`, rev.page_html, 'text/html')
-      toast('Page HTML downloaded')
+      let { data: page, error } = await supabase.rpc('rpc_get_review_page', { p_token: token })
+      if (error?.code === 'PGRST202' && Object.hasOwn(rev, 'page_html')) page = rev
+      else if (error) throw error
+      if (!page) throw new Error('Review not found')
+      if (!page.page_html) { toast(page.page_url ? 'No HTML attached — this review points to a URL' : 'No page HTML attached'); return }
+      saveFile(fileSlug() + '.html', page.page_html, 'text/html')
+      toast('HTML downloaded')
     } catch { toast('Download failed') }
+    finally { setExporting(false) }
   }
   // Branded, self-contained HTML document that walks through the client's
   // feedback section by section — readable by anyone, no page source included
@@ -1241,7 +1247,7 @@ function Feedback({ review, back }) {
             <button className="btn lite" onClick={() => copyLink('es')} title="Copy Spanish client link">ES</button>
           </span>
           <button className="btn lite" onClick={copyReport}>Copy report</button>
-          <button className="btn lite" onClick={downloadHtml} title="Download the page HTML file">Download HTML</button>
+          <button className="btn lite" disabled={exporting} onClick={downloadHtml} title="Download the page HTML file">Download HTML</button>
           <button className="btn lite" onClick={downloadChanges} title="Download the client feedback as a branded document">Download changes</button>
           {!locked
             ? <button className="btn brand" onClick={acceptNow} title="Finalize: this content will be used to build the live page">✓ Accept content</button>
